@@ -178,6 +178,57 @@ ${embed ? '<style>body{background:transparent!important}#starfield{display:none!
 <body>
 <canvas id="game-canvas"></canvas>
 <canvas id="starfield"></canvas>
+<div id="crt-overlay"></div>
+<div id="vignette-overlay"></div>
+<style>
+  /* Neon color pop — boost saturation and contrast on game layer */
+  #game-canvas {
+    filter: saturate(1.3) contrast(1.08) brightness(1.05);
+  }
+
+  /* CRT scanlines */
+  #crt-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 3;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(0,0,0,0.06) 2px,
+      rgba(0,0,0,0.06) 4px
+    );
+  }
+
+  /* Vignette — dark edges, draws eye to center */
+  #vignette-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 4;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse 70% 70% at 50% 50%,
+      transparent 50%,
+      rgba(0,0,0,0.5) 100%
+    );
+  }
+
+  /* Subtle phosphor glow on the whole viewport */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -2px; left: -2px;
+    right: -2px; bottom: -2px;
+    z-index: 0;
+    border-radius: 8px;
+    box-shadow: inset 0 0 120px rgba(0,255,255,0.03),
+                inset 0 0 60px rgba(255,0,255,0.02);
+    pointer-events: none;
+  }
+</style>
 
 <div id="splashScreen" style="
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -626,6 +677,47 @@ function updatePlasma(time, mouseNX, mouseNY, explosions, shipAlpha) {
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+// === SECTION: Glow Sprite Cache ===
+// Pre-rendered radial gradient circles cached by color+size. Replaces shadowBlur.
+var _glowCache = {};
+
+function getGlowSprite(color, radius) {
+    var key = color + '|' + radius;
+    if (_glowCache[key]) return _glowCache[key];
+    var size = Math.ceil(radius * 2);
+    var c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    var ctx = c.getContext('2d');
+    var grad = ctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.4, color.indexOf('rgba') === 0 ? color : colorToRgba(color, 0.5));
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    _glowCache[key] = c;
+    return c;
+}
+
+function colorToRgba(hex, alpha) {
+    if (hex.indexOf('rgb') === 0) {
+        return hex.replace(')', ', ' + alpha + ')').replace('rgb(', 'rgba(');
+    }
+    var r = parseInt(hex.slice(1,3), 16) || 0;
+    var g = parseInt(hex.slice(3,5), 16) || 0;
+    var b = parseInt(hex.slice(5,7), 16) || 0;
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+function drawGlow(ctx, x, y, color, radius, alpha) {
+    if (!color || radius <= 0) return;
+    var sprite = getGlowSprite(color, Math.ceil(radius));
+    var prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = (alpha !== undefined ? alpha : 0.6) * prevAlpha;
+    ctx.drawImage(sprite, x - radius, y - radius);
+    ctx.globalAlpha = prevAlpha;
 }
 
 // === SECTION: Game Engine ===
@@ -2176,12 +2268,11 @@ function drawCarrier(c) {
         for (var ci = 0; ci < c.chunks.length; ci++) {
             var ch = c.chunks[ci];
             if (!ch.alive) continue;
+            drawGlow(gameCtx, ch.x, ch.y, '#FF4400', 20, 0.4);
             gameCtx.save();
             gameCtx.translate(ch.x, ch.y);
             gameCtx.rotate(ch.rotation);
             gameCtx.fillStyle = '#FF0000';
-            gameCtx.shadowBlur = 8;
-            gameCtx.shadowColor = '#FF4400';
             gameCtx.globalAlpha = 0.9;
             gameCtx.beginPath();
             if (ch.vertices.length > 0) {
@@ -2194,7 +2285,6 @@ function drawCarrier(c) {
             gameCtx.fill();
             gameCtx.strokeStyle = '#FF8800';
             gameCtx.lineWidth = 1;
-            gameCtx.shadowBlur = 0;
             gameCtx.stroke();
             gameCtx.restore();
         }
@@ -2213,9 +2303,8 @@ function drawCarrier(c) {
     if (c.dying) drawColor = Math.random() > 0.3 ? '#FF0000' : '#FF8800';
 
     // Main hull - large wedge shape
+    drawGlow(gameCtx, 0, 0, c.color, c.radius + 15, 0.4);
     gameCtx.fillStyle = drawColor;
-    gameCtx.shadowBlur = c.dying ? 25 : 15;
-    gameCtx.shadowColor = c.dying ? '#FF4400' : drawColor;
     gameCtx.globalAlpha = c.fadeIn;
     gameCtx.beginPath();
     gameCtx.moveTo(55, 0);        // nose
@@ -2228,7 +2317,6 @@ function drawCarrier(c) {
     gameCtx.fill();
 
     // Bridge/detail stripe
-    gameCtx.shadowBlur = 0;
     gameCtx.fillStyle = c.dying ? '#FF4400' : '#880000';
     gameCtx.globalAlpha = c.fadeIn * 0.6;
     gameCtx.fillRect(-20, -4, 40, 8);
@@ -2251,12 +2339,11 @@ function drawCarrier(c) {
     // Draw carrier shields (similar to player shields but red)
     if (!c.dying && c.shields > 0) {
         gameCtx.save();
-        gameCtx.shadowBlur = 6;
-        gameCtx.shadowColor = '#FF4400';
         for (var si = 0; si < c.shields; si++) {
             var sa = c.shieldAngle + (si * Math.PI * 2 / c.maxShields);
             var ssx = c.x + Math.cos(sa) * 65;
             var ssy = c.y + Math.sin(sa) * 65;
+            drawGlow(gameCtx, ssx, ssy, '#FF4400', 12, 0.3);
             gameCtx.fillStyle = '#FF4400';
             gameCtx.globalAlpha = 0.8 * c.fadeIn;
             gameCtx.beginPath();
@@ -2534,17 +2621,18 @@ function updateAsteroids(dt) {
 }
 
 function updateParticles(dt) {
+    var scale = dt / 16.667; // normalize to 60fps baseline
     for (var i = gameState.particles.length - 1; i >= 0; i--) {
         var p = gameState.particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vx *= p.friction;
-        p.vy *= p.friction;
-        p.vy += p.gravity;
-        p.life--;
+        p.x += p.vx * scale;
+        p.y += p.vy * scale;
+        p.vx *= Math.pow(p.friction, scale);
+        p.vy *= Math.pow(p.friction, scale);
+        p.vy += p.gravity * scale;
+        p.life -= scale;
         p.alpha = clamp(p.life / p.maxLife, 0, 1);
-        if (p.shrink) p.radius *= 0.97;
-        if (p.angleVel) p.angle += p.angleVel;
+        if (p.shrink) p.radius *= Math.pow(0.97, scale);
+        if (p.angleVel) p.angle += p.angleVel * scale;
 
         if (p.life <= 0 || p.radius < 0.2) {
             gameState.particles.splice(i, 1);
@@ -2553,9 +2641,10 @@ function updateParticles(dt) {
 }
 
 function updateRingWaves(dt) {
+    var scale = dt / 16.667;
     for (var i = gameState.ringWaves.length - 1; i >= 0; i--) {
         var r = gameState.ringWaves[i];
-        r.radius += r.expandSpeed;
+        r.radius += r.expandSpeed * scale;
         r.alpha = clamp(1 - r.radius / r.maxRadius, 0, 1);
         r.lineWidth = lerp(2, 0.5, r.radius / r.maxRadius);
 
@@ -3009,8 +3098,7 @@ function drawPlayers() {
         gameCtx.save();
         gameCtx.translate(0, offset);
 
-        gameCtx.shadowBlur = 12;
-        gameCtx.shadowColor = p.color;
+        drawGlow(gameCtx, 0, 0, p.color, 24, 0.5);
 
         gameCtx.beginPath();
         gameCtx.moveTo(12, 0);
@@ -3026,8 +3114,6 @@ function drawPlayers() {
         gameCtx.stroke();
 
         if (p.drifting) {
-            gameCtx.shadowBlur = 3;
-            gameCtx.shadowColor = p.color;
             gameCtx.globalAlpha = 0.3;
             gameCtx.beginPath();
             gameCtx.arc(-7, 0, 1.5, 0, Math.PI * 2);
@@ -3035,8 +3121,7 @@ function drawPlayers() {
             gameCtx.fill();
             gameCtx.globalAlpha = p.opacity;
         } else {
-            gameCtx.shadowBlur = 8;
-            gameCtx.shadowColor = '#FFFFFF';
+            drawGlow(gameCtx, -7, 0, '#FFFFFF', 16, 0.4);
             gameCtx.beginPath();
             gameCtx.arc(-7, 0, 2.5, 0, Math.PI * 2);
             gameCtx.fillStyle = '#FFFFFF';
@@ -3056,16 +3141,15 @@ function drawShields(p) {
     var shieldColor = p.color || '#00FFFF';
     var shieldsToDraw = Math.max(p.shields, p.shields < p.baseShields ? p.baseShields : p.shields);
 
-    // Pass 1: Active shields — shadowBlur=8
+    // Pass 1: Active shields
     gameCtx.save();
-    gameCtx.shadowBlur = 8;
-    gameCtx.shadowColor = shieldColor;
     gameCtx.fillStyle = shieldColor;
     gameCtx.globalAlpha = 0.9;
     for (var i = 0; i < Math.min(p.shields, shieldsToDraw); i++) {
         var orbitAngle = p.shieldAngle + (i * Math.PI * 2 / p.maxShields);
         var sx = p.x + Math.cos(orbitAngle) * 30;
         var sy = p.y + Math.sin(orbitAngle) * 30;
+        drawGlow(gameCtx, sx, sy, shieldColor, 12, 0.4);
         gameCtx.beginPath();
         gameCtx.arc(sx, sy, 3, 0, Math.PI * 2);
         gameCtx.fill();
@@ -3075,7 +3159,6 @@ function drawShields(p) {
     // Pass 2: Recharging shields — no shadowBlur
     if (p.shields < p.baseShields) {
         gameCtx.save();
-        gameCtx.shadowBlur = 0;
         for (var i = p.shields; i < p.baseShields; i++) {
             var orbitAngle = p.shieldAngle + (i * Math.PI * 2 / p.maxShields);
             var sx = p.x + Math.cos(orbitAngle) * 30;
@@ -3225,13 +3308,12 @@ function drawShieldPickups() {
         }
         if (!visible) continue;
 
+        drawGlow(gameCtx, sp.x, sp.y, '#00FFFF', 16, 0.3);
         gameCtx.save();
         gameCtx.translate(sp.x, sp.y);
         gameCtx.rotate(sp.pulsePhase * 0.3);
 
         // Outer glow
-        gameCtx.shadowBlur = 15 * pulse;
-        gameCtx.shadowColor = '#00FFFF';
         gameCtx.globalAlpha = 0.4 * pulse;
         gameCtx.fillStyle = '#00FFFF';
         gameCtx.beginPath();
@@ -3239,7 +3321,6 @@ function drawShieldPickups() {
         gameCtx.fill();
 
         // Diamond shape
-        gameCtx.shadowBlur = 8;
         gameCtx.globalAlpha = 0.9 * pulse;
         gameCtx.fillStyle = '#00FFFF';
         gameCtx.beginPath();
@@ -3251,7 +3332,6 @@ function drawShieldPickups() {
         gameCtx.fill();
 
         // White center
-        gameCtx.shadowBlur = 0;
         gameCtx.fillStyle = '#FFFFFF';
         gameCtx.globalAlpha = 0.8 * pulse;
         gameCtx.beginPath();
@@ -3270,8 +3350,7 @@ function drawWarpAnimation(p) {
 
     if (t < 0.33) {
         var lineLen = lerp(0, 100, t / 0.33);
-        gameCtx.shadowBlur = 15;
-        gameCtx.shadowColor = '#FFFFFF';
+        drawGlow(gameCtx, 0, 0, '#00FFFF', 30, 0.4);
         gameCtx.strokeStyle = '#FFFFFF';
         gameCtx.lineWidth = 2;
         gameCtx.globalAlpha = 0.8;
@@ -3283,8 +3362,7 @@ function drawWarpAnimation(p) {
         var ph = (t - 0.33) / 0.33;
         var rx = lerp(50, 30, ph);
         var ry = lerp(2, 25, ph);
-        gameCtx.shadowBlur = 20;
-        gameCtx.shadowColor = '#CC88FF';
+        drawGlow(gameCtx, 0, 0, '#8844FF', 30, 0.4);
         gameCtx.strokeStyle = '#00FFFF';
         gameCtx.lineWidth = 2;
         gameCtx.globalAlpha = lerp(0.8, 0.6, ph);
@@ -3304,8 +3382,7 @@ function drawWarpAnimation(p) {
 
         var portalR = lerp(30, 0, ph);
         if (portalR > 1) {
-            gameCtx.shadowBlur = 15;
-            gameCtx.shadowColor = '#CC88FF';
+            drawGlow(gameCtx, 0, 0, '#CC88FF', 30, 0.4);
             gameCtx.strokeStyle = '#CC88FF';
             gameCtx.lineWidth = 1;
             gameCtx.globalAlpha = 1 - ph;
@@ -3324,8 +3401,7 @@ function drawWarpAnimation(p) {
             var warpOffset = warpShipCount === 1 ? 0 : (wsi - (warpShipCount - 1) / 2) * warpSpacing;
             gameCtx.save();
             gameCtx.translate(0, warpOffset);
-            gameCtx.shadowBlur = 12;
-            gameCtx.shadowColor = p.color;
+            drawGlow(gameCtx, 0, 0, p.color, 24, 0.5);
             gameCtx.beginPath();
             gameCtx.moveTo(12, 0);
             gameCtx.lineTo(-10, -8);
@@ -3343,7 +3419,6 @@ function drawWarpAnimation(p) {
 
 function drawBullets() {
     gameCtx.save();
-    gameCtx.shadowBlur = 15;
 
     var alphas = [0.1, 0.2, 0.4, 0.6];
     for (var i = 0; i < gameState.bullets.length; i++) {
@@ -3351,7 +3426,7 @@ function drawBullets() {
         if (b.x < -50 || b.x > canvasW + 50 || b.y < -50 || b.y > canvasH + 50) continue;
 
         var bColor = b.color || '#00FFFF';
-        gameCtx.shadowColor = bColor;
+        drawGlow(gameCtx, b.x, b.y, bColor, 12, 0.5);
         gameCtx.fillStyle = bColor;
 
         for (var t = 0; t < b.trail.length; t++) {
@@ -3385,9 +3460,8 @@ function drawBullets() {
 }
 
 function drawEnemies() {
-    // Pass 1: All enemy bodies — single shadowBlur=10
+    // Pass 1: All enemy bodies
     gameCtx.save();
-    gameCtx.shadowBlur = 10;
     for (var i = 0; i < gameState.enemies.length; i++) {
         var e = gameState.enemies[i];
         if (e.x < -50 || e.x > canvasW + 50 || e.y < -50 || e.y > canvasH + 50) continue;
@@ -3404,7 +3478,7 @@ function drawEnemies() {
             drawColor = '#FFFFFF';
         }
 
-        gameCtx.shadowColor = drawColor;
+        drawGlow(gameCtx, 0, 0, drawColor, e.radius + 10, 0.4);
 
         if (e.type === 'saucer') {
             drawSaucer(e, drawColor);
@@ -3438,8 +3512,7 @@ function drawEnemies() {
         b = Math.round(b + (255 - b) * c);
         var drawColor = 'rgb(' + r + ',' + g + ',' + b + ')';
 
-        gameCtx.shadowColor = drawColor;
-        gameCtx.shadowBlur = 10 + e.charging * 20;
+        drawGlow(gameCtx, 0, 0, drawColor, e.radius + 10 + e.charging * 20, 0.5);
 
         if (e.type === 'saucer') {
             drawSaucer(e, drawColor);
@@ -3450,19 +3523,18 @@ function drawEnemies() {
         gameCtx.restore();
     }
 
-    // Pass 3: All enemy shields — single shadowBlur=4
+    // Pass 3: All enemy shields
     gameCtx.save();
-    gameCtx.shadowBlur = 4;
     for (var i = 0; i < gameState.enemies.length; i++) {
         var e = gameState.enemies[i];
         if (e.shields <= 0) continue;
         if (e.x < -50 || e.x > canvasW + 50 || e.y < -50 || e.y > canvasH + 50) continue;
-        gameCtx.shadowColor = e.color;
         gameCtx.fillStyle = e.color;
         for (var esi = 0; esi < e.shields; esi++) {
             var esa = e.shieldAngle + (esi * Math.PI * 2 / e.maxShields);
             var esx = e.x + Math.cos(esa) * (e.radius + 8);
             var esy = e.y + Math.sin(esa) * (e.radius + 8);
+            drawGlow(gameCtx, esx, esy, e.color, 8, 0.3);
             gameCtx.globalAlpha = 0.8 * e.fadeIn;
             gameCtx.beginPath();
             gameCtx.arc(esx, esy, 2.5, 0, Math.PI * 2);
@@ -3570,8 +3642,7 @@ function drawEnemyBullets() {
     gameCtx.save();
     gameCtx.globalCompositeOperation = 'lighter';
 
-    // Pass 1: All trails — no shadowBlur, semi-transparent circles
-    gameCtx.shadowBlur = 0;
+    // Pass 1: All trails — semi-transparent circles
     for (var i = 0; i < gameState.enemyBullets.length; i++) {
         var b = gameState.enemyBullets[i];
         if (!b.alive || !b.trail) continue;
@@ -3586,15 +3657,14 @@ function drawEnemyBullets() {
         }
     }
 
-    // Pass 2: All torpedo cores — single shadowBlur set, colored circle + white center
-    gameCtx.shadowBlur = 20;
+    // Pass 2: All torpedo cores — colored circle + white center
     for (var i = 0; i < gameState.enemyBullets.length; i++) {
         var b = gameState.enemyBullets[i];
         if (!b.alive) continue;
         if (b.x < -50 || b.x > canvasW + 50 || b.y < -50 || b.y > canvasH + 50) continue;
         var pulse = 0.8 + Math.sin(b.pulsePhase) * 0.2;
 
-        gameCtx.shadowColor = b.color;
+        drawGlow(gameCtx, b.x, b.y, b.color, 16, 0.5);
         gameCtx.fillStyle = b.color;
         gameCtx.globalAlpha = 1;
         gameCtx.beginPath();
@@ -3612,14 +3682,12 @@ function drawEnemyBullets() {
 
 function drawLasers() {
     if (gameState.lasers.length === 0) return;
-    // Pass 1: Laser beams — single shadowBlur=12
+    // Pass 1: Laser beams
     gameCtx.save();
     gameCtx.globalCompositeOperation = 'lighter';
-    gameCtx.shadowBlur = 12;
     for (var i = 0; i < gameState.lasers.length; i++) {
         var l = gameState.lasers[i];
         gameCtx.globalAlpha = l.alpha;
-        gameCtx.shadowColor = l.color;
         gameCtx.strokeStyle = l.color;
         gameCtx.lineWidth = l.width;
         gameCtx.beginPath();
@@ -3627,17 +3695,16 @@ function drawLasers() {
         gameCtx.lineTo(l.x2, l.y2);
         gameCtx.stroke();
     }
-    // Pass 2: Hit flashes — shadowBlur=20
-    gameCtx.shadowBlur = 20;
+    // Pass 2: Hit flashes
     for (var i = 0; i < gameState.lasers.length; i++) {
         var l = gameState.lasers[i];
         if (!l.hit) continue;
         var elapsed = l.maxLife - l.life;
         if (elapsed < 200) {
             var flashAlpha = 1 - elapsed / 200;
+            drawGlow(gameCtx, l.hitX, l.hitY, l.color, 30, 0.5);
             gameCtx.globalAlpha = flashAlpha;
             gameCtx.fillStyle = '#FFFFFF';
-            gameCtx.shadowColor = l.color;
             gameCtx.beginPath();
             gameCtx.arc(l.hitX, l.hitY, 8 + (1 - flashAlpha) * 12, 0, Math.PI * 2);
             gameCtx.fill();
@@ -3661,9 +3728,6 @@ function drawParticles() {
 
     gameCtx.save();
     gameCtx.globalCompositeOperation = 'lighter';
-    if (!highCount) {
-        gameCtx.shadowBlur = 6;
-    }
     for (var i = 0; i < gameState.particles.length; i++) {
         var p = gameState.particles[i];
         if (!p.glow) continue;
@@ -3677,10 +3741,6 @@ function drawSingleParticle(p, useGlow) {
     gameCtx.save();
     gameCtx.globalAlpha = p.alpha;
 
-    if (useGlow) {
-        gameCtx.shadowBlur = 6;
-        gameCtx.shadowColor = p.color;
-    }
 
     gameCtx.fillStyle = p.color;
     gameCtx.strokeStyle = p.color;
@@ -3726,8 +3786,6 @@ function drawRingWaves() {
         gameCtx.globalAlpha = r.alpha;
         gameCtx.strokeStyle = r.color;
         gameCtx.lineWidth = r.lineWidth;
-        gameCtx.shadowBlur = 4;
-        gameCtx.shadowColor = r.color;
         gameCtx.beginPath();
         gameCtx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
         gameCtx.stroke();
@@ -3822,8 +3880,6 @@ function renderGame() {
 
     // Performance overlay
     gameCtx.save();
-    gameCtx.shadowBlur = 0;
-    gameCtx.shadowColor = 'transparent';
     gameCtx.font = '11px monospace';
     gameCtx.globalAlpha = 0.85;
 
