@@ -18,7 +18,7 @@ Void Drift is a browser-based space shooter built for LAN multiplayer. Up to 4 p
 ## Features
 
 - **LAN multiplayer** -- up to 4 players in the same browser game, no account needed
-- **Drift mechanic** -- hold left-click to decouple movement from aiming. Ship captures velocity and coasts with wall bounce, 3% steering, and near-zero friction. Cancelled on hit.
+- **Drift mechanic** -- hold left-click to decouple movement from aiming. Ship captures velocity and coasts with wall bounce, 3% steering, and near-zero friction. Cancelled on hit. Drifting doubles base shield recharge rate (5s instead of 10s) -- trade aiming precision for faster recovery.
 - **PvP combat** -- auto-fire targets other players at the same priority as enemies. Shields absorb PvP hits.
 - **5 enemy types** -- saucers and fighters with lasers, photon torpedoes, shields, and adaptive AI
 - **Elite enemies** -- carrier-spawned elites with 5 shields, 3 HP, white pulsing glow, barrage-aware pathfinding, and strong pursuit AI

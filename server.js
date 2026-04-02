@@ -1717,7 +1717,7 @@ function updatePlayers(dt) {
     }
 
     if (p.shields < p.baseShields) {
-        p.shieldRechargeTimer += dt;
+        p.shieldRechargeTimer += p.drifting ? dt * 2 : dt;
         if (p.shieldRechargeTimer >= p.shieldRechargeRate) {
             p.shields++;
             p.shieldRechargeTimer -= p.shieldRechargeRate;

@@ -121,6 +121,7 @@ All game entities (players, enemies, bullets, asteroids, etc.) use a `nextId()` 
 - Spawn shields: 1 (base shield)
 - Max shields: 5 (additional shields come from shield pickups only)
 - Only the base shield (first slot) recharges at 10000ms (10 seconds); shields above 1 are pickup-only
+- Drift modifier: while the player is drifting, base shield recharge rate doubles to 5000ms (see Section 4, Drift Mechanic)
 - Visual: orbiting dots at 30px radius, spaced `2*PI / maxShields` apart (72 degrees for 5 max), rotating at 2 rad/s
 - Active shields: filled circles in player color (3px radius, alpha 0.9)
 - Recharging indicator: only shown when shields < 1 (slot 0 only) -- empty circle (alpha 0.3) with pie-fill showing progress (alpha 0.6)
@@ -184,6 +185,12 @@ The drift mechanic decouples movement from aiming, creating a rear-wheel-drive s
 - **Friction:** `0.998` per frame -- drift slowly decays
 - **Wall bounce:** drift velocity reverses at 30% on screen edge hits
 - **On release:** normal lerp-to-mouse movement resumes immediately
+
+### Shield Recharge Bonus
+
+- While drifting, base shield recharge rate is doubled (5000ms instead of 10000ms)
+- This gives drifting a tactical purpose beyond movement: trade aiming precision for faster shield recovery
+- The bonus applies only while actively drifting; recharge timer reverts to normal rate on drift end
 
 ### Visual
 
