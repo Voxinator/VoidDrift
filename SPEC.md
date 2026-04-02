@@ -244,7 +244,7 @@ Shields absorb PvP hits identically to enemy hits: each hit consumes 1 shield, t
 
 **Spawn:**
 - Rate: 2500-5000ms (random interval, re-rolled each spawn)
-- Max: 12 enemies simultaneously (24 at player level 4+). On player death at L4, cap reduces back to 12 but existing enemies beyond the cap persist naturally.
+- Max: 12 enemies simultaneously (doubles to 24 at player level 4+). Up to 2 carriers spawn simultaneously at level 4. Carriers launch elites at double rate when enemy count is below 75% of max capacity. On player death at L4, cap reduces back to 12 but existing enemies beyond the cap persist naturally.
 - Spawn location: random edge of screen (20-40px outside)
 - Player exclusion: 100px minimum distance from any player (up to 10 attempts to find valid position)
 - Fade-in: 500ms
@@ -254,7 +254,7 @@ Shields absorb PvP hits identically to enemy hits: each hit consumes 1 shield, t
 - Direction changes: every 3000-6000ms, new random angle and speed 0.5-1.5
 - Lazy pursuit: 30% chance (`pursuit` flag) -- applies 0.3 acceleration toward nearest player per second
 - Hover oscillation: `sin(time/333 + offset) * 0.5` on Y axis
-- Despawn: when 100px+ off any screen edge
+- Despawn: when 100px+ off any screen edge (300px for elite enemies)
 - **Behavior system**: `behavior` property defaults to `'normal'`. On first non-lethal hit, 33% chance each of: `'retreat'` (0.6 px/s acceleration away from player), `'aggressive'` (0.8 px/s acceleration toward player), or no change.
 
 **Laser charge-up:**
@@ -556,17 +556,28 @@ A large enemy mothership that spawns smaller enemies and fires torpedo barrages.
 - Drift speed: 0.3-0.5 px/frame
 
 **AI:**
-- Orbits the nearest player: steers away if closer than 250px (0.02 strength), drifts toward if farther than 400px (0.015 strength)
+- Orbits the nearest player at sweet spot range (200-350px): steers away if closer than 200px, drifts toward if farther than 350px
+- **Flanking AI**: when 2 carriers are active, they intelligently approach the player from opposite sides
+- **Carrier-carrier repulsion**: strong repulsion prevents overlap (120px + combined radii separation)
 - Asteroid avoidance: 0.06 strength, 80px buffer beyond collision radii
 - Random drift direction changes every 5000-8000ms, speed 0.3-0.5
 
 **Enemy launches:**
 - Every 3000ms, launches a new enemy from a random point around the carrier perimeter
+- Double launch rate when enemy count is below 75% of max capacity
 - Launched enemies get a speed boost outward from carrier
-- Launched enemies receive shields based on player level (same table as regular spawns)
+- Launched enemies are **elites** (see Elite Enemies below)
+
+**Elite Enemies (carrier-spawned):**
+- 5 shields, 3 HP (vs normal 0-5 shields, 2 HP)
+- Visual: white body with pulsing glow ring and halo effect
+- Slow launch velocity (0.5 px/frame) but strong pursuit AI (1.5x normal pursuit strength)
+- Barrage-aware pathfinding: detects and flees the carrier torpedo cone
+- Wider despawn boundary (300px vs normal 100px)
+- Stronger asteroid and torpedo avoidance than normal enemies
 
 **Torpedo barrage (bullet-hell style):**
-- Only activates when a player is alive and at level 4+
+- Only activates when a player is alive and at level 4+, and nearest player is within 500px
 - Alternating left/right cannons (25px perpendicular offset from center), not simultaneous
 - 45-degree spread arc toward nearest player (random angle within arc per shot)
 - 200ms between shots
@@ -596,6 +607,8 @@ A large enemy mothership that spawns smaller enemies and fires torpedo barrages.
 - Shields recharge over time at 8000ms interval
 
 **Despawn:** removed if 300px+ off any screen edge.
+
+**Known fix (carrier freeze):** A `var ci` shadowing bug previously caused game freezes during dual carrier battles. The loop variable was renamed to eliminate the shadowing conflict.
 
 ---
 
@@ -741,8 +754,17 @@ Stars offset by mouse position: `px = star.x + mouseX * 20 * star.depth`. Maximu
 |-----|--------|
 | `P` | Pause / unpause game |
 | `Shift+P` | Toggle performance panel (expanded/collapsed) |
+| `` ` `` (backtick) | Toggle debug mode (shown as "DEBUG" in perf overlay) |
+| `1`-`4` | Set player level instantly (debug mode only) |
+| `5` | Toggle god mode -- infinite health (shown as "DEBUG [GOD]" in perf overlay, debug mode only) |
 
 All key handlers ignore keypresses when focused on INPUT, SELECT, or TEXTAREA elements.
+
+**Debug mode:**
+- Toggled with the backtick key
+- When active, "DEBUG" is displayed in the performance overlay
+- Keys 1-4 instantly set the player's level to the corresponding value
+- Key 5 toggles god mode (infinite health); perf overlay shows "DEBUG [GOD]" when god mode is active
 
 **Performance audit overlay** (press `Shift+P` to toggle):
 

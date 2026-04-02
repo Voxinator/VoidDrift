@@ -21,8 +21,9 @@ Void Drift is a browser-based space shooter built for LAN multiplayer. Up to 4 p
 - **Drift mechanic** -- hold left-click to decouple movement from aiming. Ship captures velocity and coasts with wall bounce, 3% steering, and near-zero friction. Cancelled on hit.
 - **PvP combat** -- auto-fire targets other players at the same priority as enemies. Shields absorb PvP hits.
 - **5 enemy types** -- saucers and fighters with lasers, photon torpedoes, shields, and adaptive AI
-- **Carrier boss** -- a mothership that spawns enemies and fires bullet-hell torpedo barrages. Up to 2 carriers at level 4.
-- **Level 4 scaling** -- max enemies doubles to 24, dual carriers spawn simultaneously. On death, cap drops back to 12 but existing enemies persist.
+- **Elite enemies** -- carrier-spawned elites with 5 shields, 3 HP, white pulsing glow, barrage-aware pathfinding, and strong pursuit AI
+- **Carrier boss** -- a mothership that spawns enemies and fires bullet-hell torpedo barrages. Up to 2 carriers at level 4 with intelligent flanking AI and carrier-carrier repulsion.
+- **Level 4 scaling** -- max enemies doubles to 24, dual carriers spawn simultaneously with double launch rate when below 75% capacity. On death, cap drops back to 12 but existing enemies persist.
 - **Chain-reaction explosions** -- dying enemies detonate in AoE blasts that trigger other deaths
 - **Web Audio SFX** -- spatial sound with distance-based volume and stereo panning. Blasters, lasers, torpedoes, explosions, shield pickups, 6 randomized ship death sounds.
 - **Background music** -- auto-discovers Nebula MP3 tracks from `/sounds/`, shuffled playlist, loops back-to-back
@@ -52,6 +53,9 @@ Open [http://localhost:3800](http://localhost:3800) in your browser. Open a seco
 | Left-click + drag | Drift -- decouple movement from aiming, coast on captured velocity |
 | `P` | Pause |
 | `Shift+P` | Performance overlay |
+| `` ` `` (backtick) | Toggle debug mode |
+| `1`-`4` | Set player level (debug mode) |
+| `5` | Toggle god mode (debug mode) |
 
 ## Multiplayer
 
