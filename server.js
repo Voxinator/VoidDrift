@@ -106,6 +106,11 @@ io.on('connection', (socket) => {
   });
 });
 
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+app.use('/sounds', express.static(__dirname + '/sounds'));
+
 app.get('/', (req, res) => {
   const embed = req.query.embed !== undefined;
   res.type('html').send(`<!DOCTYPE html>
@@ -168,6 +173,120 @@ ${embed ? '<style>body{background:transparent!important}#starfield{display:none!
 <body>
 <canvas id="game-canvas"></canvas>
 <canvas id="starfield"></canvas>
+
+<div id="splashScreen" style="
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  z-index: 100; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 50px;
+  cursor: pointer;
+">
+  <div id="splashTitle">Void Drift</div>
+
+  <button id="playBtn">
+    <span id="playBtnText">Play</span>
+  </button>
+</div>
+
+<style>
+  @keyframes titleShift {
+    0% { background-position: 0% 50%; filter: drop-shadow(0 0 40px rgba(0,255,255,0.25)) drop-shadow(0 0 80px rgba(255,0,255,0.12)); }
+    33% { background-position: 50% 100%; filter: drop-shadow(0 0 40px rgba(255,0,255,0.25)) drop-shadow(0 0 80px rgba(255,255,0,0.12)); }
+    66% { background-position: 100% 0%; filter: drop-shadow(0 0 40px rgba(255,255,0,0.2)) drop-shadow(0 0 80px rgba(0,255,136,0.12)); }
+    100% { background-position: 0% 50%; filter: drop-shadow(0 0 40px rgba(0,255,255,0.25)) drop-shadow(0 0 80px rgba(255,0,255,0.12)); }
+  }
+  @keyframes glassShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  @keyframes borderGlow {
+    0% { border-color: rgba(0,255,255,0.15); box-shadow: 0 0 30px rgba(0,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.04); }
+    33% { border-color: rgba(255,0,255,0.15); box-shadow: 0 0 30px rgba(255,0,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.04); }
+    66% { border-color: rgba(0,255,136,0.15); box-shadow: 0 0 30px rgba(0,255,136,0.06), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.04); }
+    100% { border-color: rgba(0,255,255,0.15); box-shadow: 0 0 30px rgba(0,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.04); }
+  }
+
+  #splashTitle {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    font-size: clamp(56px, 12vw, 140px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg,
+      rgba(0,255,255,0.7),
+      rgba(180,130,255,0.6),
+      rgba(255,100,200,0.5),
+      rgba(255,220,100,0.5),
+      rgba(0,255,180,0.6),
+      rgba(0,255,255,0.7));
+    background-size: 400% 400%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: titleShift 8s ease infinite;
+    text-align: center;
+    line-height: 1;
+    padding: 0 20px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #playBtn {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    font-size: clamp(15px, 2vw, 19px);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.75);
+    padding: 16px 56px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 980px;
+    cursor: pointer;
+    background: linear-gradient(135deg,
+      rgba(255,255,255,0.06),
+      rgba(255,255,255,0.03),
+      rgba(255,255,255,0.05));
+    background-size: 200% 200%;
+    animation: glassShift 6s ease infinite, borderGlow 8s ease infinite;
+    backdrop-filter: blur(40px) saturate(1.6) brightness(1.1);
+    -webkit-backdrop-filter: blur(40px) saturate(1.6) brightness(1.1);
+    transition: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+    position: relative;
+    overflow: hidden;
+    outline: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #playBtn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 50%;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+    border-radius: 980px 980px 0 0;
+    pointer-events: none;
+  }
+
+  #playBtn:hover {
+    color: rgba(255,255,255,0.95);
+    border-color: rgba(255,255,255,0.25);
+    background: linear-gradient(135deg,
+      rgba(255,255,255,0.1),
+      rgba(255,255,255,0.05),
+      rgba(255,255,255,0.08));
+    background-size: 200% 200%;
+    box-shadow:
+      0 0 50px rgba(0,255,255,0.1),
+      0 0 100px rgba(255,0,255,0.05),
+      inset 0 1px 0 rgba(255,255,255,0.2),
+      inset 0 -1px 0 rgba(255,255,255,0.06);
+    transform: scale(1.02);
+  }
+
+  #playBtn:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease;
+  }
+</style>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -2919,24 +3038,33 @@ function drawPlayers() {
 
 function drawShields(p) {
     var shieldColor = p.color || '#00FFFF';
+    var shieldsToDraw = Math.max(p.shields, p.shields < p.baseShields ? p.baseShields : p.shields);
+
+    // Pass 1: Active shields — shadowBlur=8
     gameCtx.save();
     gameCtx.shadowBlur = 8;
     gameCtx.shadowColor = shieldColor;
-    var shieldsToDraw = Math.max(p.shields, p.shields < p.baseShields ? p.baseShields : p.shields);
-    for (var i = 0; i < shieldsToDraw; i++) {
+    gameCtx.fillStyle = shieldColor;
+    gameCtx.globalAlpha = 0.9;
+    for (var i = 0; i < Math.min(p.shields, shieldsToDraw); i++) {
         var orbitAngle = p.shieldAngle + (i * Math.PI * 2 / p.maxShields);
         var sx = p.x + Math.cos(orbitAngle) * 30;
         var sy = p.y + Math.sin(orbitAngle) * 30;
+        gameCtx.beginPath();
+        gameCtx.arc(sx, sy, 3, 0, Math.PI * 2);
+        gameCtx.fill();
+    }
+    gameCtx.restore();
 
-        if (i < p.shields) {
-            gameCtx.fillStyle = shieldColor;
-            gameCtx.globalAlpha = 0.9;
-            gameCtx.beginPath();
-            gameCtx.arc(sx, sy, 3, 0, Math.PI * 2);
-            gameCtx.fill();
-        } else if (i < p.baseShields && p.shields < p.baseShields) {
+    // Pass 2: Recharging shields — no shadowBlur
+    if (p.shields < p.baseShields) {
+        gameCtx.save();
+        gameCtx.shadowBlur = 0;
+        for (var i = p.shields; i < p.baseShields; i++) {
+            var orbitAngle = p.shieldAngle + (i * Math.PI * 2 / p.maxShields);
+            var sx = p.x + Math.cos(orbitAngle) * 30;
+            var sy = p.y + Math.sin(orbitAngle) * 30;
             var fillRatio = p.shieldRechargeTimer / p.shieldRechargeRate;
-            gameCtx.shadowBlur = 0;
             gameCtx.globalAlpha = 0.3;
             gameCtx.strokeStyle = shieldColor;
             gameCtx.lineWidth = 1;
@@ -2951,10 +3079,9 @@ function drawShields(p) {
             gameCtx.arc(sx, sy, 3, -Math.PI / 2, -Math.PI / 2 + fillRatio * Math.PI * 2);
             gameCtx.closePath();
             gameCtx.fill();
-            gameCtx.shadowBlur = 8;
         }
+        gameCtx.restore();
     }
-    gameCtx.restore();
 }
 
 function updateShieldPickups(dt) {
@@ -3241,11 +3368,13 @@ function drawBullets() {
 }
 
 function drawEnemies() {
+    // Pass 1: All enemy bodies — single shadowBlur=10
     gameCtx.save();
     gameCtx.shadowBlur = 10;
     for (var i = 0; i < gameState.enemies.length; i++) {
         var e = gameState.enemies[i];
         if (e.x < -50 || e.x > canvasW + 50 || e.y < -50 || e.y > canvasH + 50) continue;
+        if (e.charging > 0) continue; // drawn in pass 2
         gameCtx.save();
         gameCtx.globalAlpha = e.fadeIn;
         gameCtx.translate(e.x, e.y);
@@ -3256,25 +3385,9 @@ function drawEnemies() {
             gameCtx.globalAlpha *= (0.4 + Math.random() * 0.5);
         } else if (e.damageFlashTimer > 0) {
             drawColor = '#FFFFFF';
-        } else if (e.charging > 0) {
-            // Lerp color toward white during charge-up
-            var r = parseInt(e.color.slice(1,3), 16);
-            var g = parseInt(e.color.slice(3,5), 16);
-            var b = parseInt(e.color.slice(5,7), 16);
-            var c = e.charging;
-            r = Math.round(r + (255 - r) * c);
-            g = Math.round(g + (255 - g) * c);
-            b = Math.round(b + (255 - b) * c);
-            drawColor = 'rgb(' + r + ',' + g + ',' + b + ')';
         }
 
         gameCtx.shadowColor = drawColor;
-        // Increase glow during charge-up
-        if (e.charging > 0) {
-            gameCtx.shadowBlur = 10 + e.charging * 20;
-        } else {
-            gameCtx.shadowBlur = 10;
-        }
 
         if (e.type === 'saucer') {
             drawSaucer(e, drawColor);
@@ -3287,23 +3400,56 @@ function drawEnemies() {
         }
 
         gameCtx.restore();
+    }
+    gameCtx.restore();
 
-        // Draw enemy shields
-        if (e.shields > 0) {
-            gameCtx.save();
-            gameCtx.shadowBlur = 4;
-            gameCtx.shadowColor = e.color;
-            for (var esi = 0; esi < e.shields; esi++) {
-                var esa = e.shieldAngle + (esi * Math.PI * 2 / e.maxShields);
-                var esx = e.x + Math.cos(esa) * (e.radius + 8);
-                var esy = e.y + Math.sin(esa) * (e.radius + 8);
-                gameCtx.fillStyle = e.color;
-                gameCtx.globalAlpha = 0.8 * e.fadeIn;
-                gameCtx.beginPath();
-                gameCtx.arc(esx, esy, 2.5, 0, Math.PI * 2);
-                gameCtx.fill();
-            }
-            gameCtx.restore();
+    // Pass 2: Charging enemies — higher shadowBlur
+    for (var i = 0; i < gameState.enemies.length; i++) {
+        var e = gameState.enemies[i];
+        if (e.charging <= 0) continue;
+        if (e.x < -50 || e.x > canvasW + 50 || e.y < -50 || e.y > canvasH + 50) continue;
+        gameCtx.save();
+        gameCtx.globalAlpha = e.fadeIn;
+        gameCtx.translate(e.x, e.y);
+
+        var r = parseInt(e.color.slice(1,3), 16);
+        var g = parseInt(e.color.slice(3,5), 16);
+        var b = parseInt(e.color.slice(5,7), 16);
+        var c = e.charging;
+        r = Math.round(r + (255 - r) * c);
+        g = Math.round(g + (255 - g) * c);
+        b = Math.round(b + (255 - b) * c);
+        var drawColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+
+        gameCtx.shadowColor = drawColor;
+        gameCtx.shadowBlur = 10 + e.charging * 20;
+
+        if (e.type === 'saucer') {
+            drawSaucer(e, drawColor);
+        } else {
+            drawFighter(e, drawColor);
+        }
+
+        gameCtx.restore();
+    }
+
+    // Pass 3: All enemy shields — single shadowBlur=4
+    gameCtx.save();
+    gameCtx.shadowBlur = 4;
+    for (var i = 0; i < gameState.enemies.length; i++) {
+        var e = gameState.enemies[i];
+        if (e.shields <= 0) continue;
+        if (e.x < -50 || e.x > canvasW + 50 || e.y < -50 || e.y > canvasH + 50) continue;
+        gameCtx.shadowColor = e.color;
+        gameCtx.fillStyle = e.color;
+        for (var esi = 0; esi < e.shields; esi++) {
+            var esa = e.shieldAngle + (esi * Math.PI * 2 / e.maxShields);
+            var esx = e.x + Math.cos(esa) * (e.radius + 8);
+            var esy = e.y + Math.sin(esa) * (e.radius + 8);
+            gameCtx.globalAlpha = 0.8 * e.fadeIn;
+            gameCtx.beginPath();
+            gameCtx.arc(esx, esy, 2.5, 0, Math.PI * 2);
+            gameCtx.fill();
         }
     }
     gameCtx.restore();
@@ -3448,13 +3594,14 @@ function drawEnemyBullets() {
 }
 
 function drawLasers() {
+    if (gameState.lasers.length === 0) return;
+    // Pass 1: Laser beams — single shadowBlur=12
     gameCtx.save();
     gameCtx.globalCompositeOperation = 'lighter';
+    gameCtx.shadowBlur = 12;
     for (var i = 0; i < gameState.lasers.length; i++) {
         var l = gameState.lasers[i];
-        gameCtx.save();
         gameCtx.globalAlpha = l.alpha;
-        gameCtx.shadowBlur = 12 * l.alpha;
         gameCtx.shadowColor = l.color;
         gameCtx.strokeStyle = l.color;
         gameCtx.lineWidth = l.width;
@@ -3462,21 +3609,22 @@ function drawLasers() {
         gameCtx.moveTo(l.x1, l.y1);
         gameCtx.lineTo(l.x2, l.y2);
         gameCtx.stroke();
-        // Flash circle at hit point for first 200ms
-        if (l.hit) {
-            var elapsed = l.maxLife - l.life;
-            if (elapsed < 200) {
-                var flashAlpha = 1 - elapsed / 200;
-                gameCtx.globalAlpha = flashAlpha;
-                gameCtx.fillStyle = '#FFFFFF';
-                gameCtx.shadowBlur = 20;
-                gameCtx.shadowColor = l.color;
-                gameCtx.beginPath();
-                gameCtx.arc(l.hitX, l.hitY, 8 + (1 - flashAlpha) * 12, 0, Math.PI * 2);
-                gameCtx.fill();
-            }
+    }
+    // Pass 2: Hit flashes — shadowBlur=20
+    gameCtx.shadowBlur = 20;
+    for (var i = 0; i < gameState.lasers.length; i++) {
+        var l = gameState.lasers[i];
+        if (!l.hit) continue;
+        var elapsed = l.maxLife - l.life;
+        if (elapsed < 200) {
+            var flashAlpha = 1 - elapsed / 200;
+            gameCtx.globalAlpha = flashAlpha;
+            gameCtx.fillStyle = '#FFFFFF';
+            gameCtx.shadowColor = l.color;
+            gameCtx.beginPath();
+            gameCtx.arc(l.hitX, l.hitY, 8 + (1 - flashAlpha) * 12, 0, Math.PI * 2);
+            gameCtx.fill();
         }
-        gameCtx.restore();
     }
     gameCtx.restore();
 }
@@ -4193,7 +4341,7 @@ function guestLoop(timestamp) {
         if (prevRemoteState) {
             diffAndTriggerEffects(prevRemoteState, remoteState);
         }
-        prevRemoteState = JSON.parse(JSON.stringify(remoteState));
+        prevRemoteState = remoteState;
 
         // Apply remote state to local gameState for rendering
         applyRemoteState(remoteState);
@@ -4372,9 +4520,49 @@ window.addEventListener('resize', function() {
     var gc = document.getElementById('game-canvas');
     gc.width = window.innerWidth;
     gc.height = window.innerHeight;
+    canvasW = window.innerWidth;
+    canvasH = window.innerHeight;
 });
 
 startAll();
+
+// === SECTION: Background Music ===
+var _musicTracks = ['/sounds/Nebula 1.mp3', '/sounds/Nebula 2.mp3'];
+var _musicIndex = Math.floor(Math.random() * _musicTracks.length);
+var _musicAudio = null;
+var _musicStarted = false;
+
+function startMusic() {
+    if (_musicStarted) return;
+    _musicStarted = true;
+    playNextTrack();
+}
+
+function playNextTrack() {
+    _musicAudio = new Audio(_musicTracks[_musicIndex]);
+    _musicAudio.volume = 0.5;
+    _musicAudio.addEventListener('ended', function() {
+        _musicIndex = (_musicIndex + 1) % _musicTracks.length;
+        playNextTrack();
+    });
+    _musicAudio.play().catch(function() { _musicStarted = false; });
+}
+
+// Splash screen — play button starts music and dismisses
+var _splashDismissed = false;
+document.getElementById('playBtn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (_splashDismissed) return;
+    _splashDismissed = true;
+    var splash = document.getElementById('splashScreen');
+    splash.style.transition = 'opacity 0.6s ease';
+    splash.style.opacity = '0';
+    setTimeout(function() { splash.style.display = 'none'; }, 600);
+    startMusic();
+});
+document.getElementById('splashScreen').addEventListener('click', function() {
+    document.getElementById('playBtn').click();
+});
 </script>
 </body>
 </html>`);
