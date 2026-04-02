@@ -18,12 +18,19 @@ Void Drift is a browser-based space shooter built for LAN multiplayer. Up to 4 p
 ## Features
 
 - **LAN multiplayer** -- up to 4 players in the same browser game, no account needed
-- **Drift mechanic** -- decouple movement from aiming for rear-wheel-drive space combat
-- **PvP combat** -- auto-fire targets other players at the same priority as enemies
+- **Drift mechanic** -- hold left-click to decouple movement from aiming. Ship captures velocity and coasts with wall bounce, 3% steering, and near-zero friction. Cancelled on hit.
+- **PvP combat** -- auto-fire targets other players at the same priority as enemies. Shields absorb PvP hits.
 - **5 enemy types** -- saucers and fighters with lasers, photon torpedoes, shields, and adaptive AI
-- **Carrier boss** -- a mothership that spawns enemies and fires bullet-hell torpedo barrages
+- **Carrier boss** -- a mothership that spawns enemies and fires bullet-hell torpedo barrages. Up to 2 carriers at level 4.
+- **Level 4 scaling** -- max enemies doubles to 24, dual carriers spawn simultaneously. On death, cap drops back to 12 but existing enemies persist.
 - **Chain-reaction explosions** -- dying enemies detonate in AoE blasts that trigger other deaths
+- **Web Audio SFX** -- spatial sound with distance-based volume and stereo panning. Blasters, lasers, torpedoes, explosions, shield pickups, 6 randomized ship death sounds.
+- **Background music** -- auto-discovers Nebula MP3 tracks from `/sounds/`, shuffled playlist, loops back-to-back
+- **Liquid glass splash screen** -- rotating gradient title, frosted glass Play button. Starts music on click.
+- **CRT post-processing** -- CSS scanline overlay, vignette, neon color pop, phosphor glow. All CSS, zero perf cost.
 - **WebGL plasma background** -- full-screen procedural nebula with simplex noise, ship repulsion, and explosion displacement
+- **Glow sprite system** -- pre-rendered radial gradient sprites replace Canvas 2D shadowBlur. FPS went from ~38 to 120+.
+- **Frame-rate independent particles** -- all particle life, friction, shrink, and ring wave expansion dt-normalized to 60fps baseline
 
 ## Quick Start
 
@@ -64,6 +71,7 @@ Single-file architecture. The entire game -- server, HTML, CSS, JavaScript, GLSL
 | **Server** | Express 5 |
 | **Multiplayer** | Socket.io (WebSocket only) |
 | **Rendering** | WebGL (plasma nebula) + Canvas 2D (starfield, game) |
+| **Audio** | Web Audio API (pre-decoded AudioBuffers, spatial stereo panning) |
 | **Dependencies** | 2 (express, socket.io) |
 
 ## Origin Story

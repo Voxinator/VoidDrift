@@ -73,7 +73,7 @@ The game tracks a `players[]` array instead of a single player object. Each play
 
 ### Per-Player Death & Respawn
 
-Each player has independent death and respawn timers. When one player dies, the others continue playing. Respawn uses safe random spawn locations that avoid enemies and other hazards.
+Each player has independent death and respawn timers. When one player dies, the others continue playing. Respawn and initial join use safe random spawn: random positions 150px+ from enemies, carriers, asteroids, and other players. Falls back to pure random if no safe spot found in 20 attempts.
 
 ### Entity IDs
 
@@ -244,7 +244,7 @@ Shields absorb PvP hits identically to enemy hits: each hit consumes 1 shield, t
 
 **Spawn:**
 - Rate: 2500-5000ms (random interval, re-rolled each spawn)
-- Max: 12 enemies simultaneously
+- Max: 12 enemies simultaneously (24 at player level 4+). On player death at L4, cap reduces back to 12 but existing enemies beyond the cap persist naturally.
 - Spawn location: random edge of screen (20-40px outside)
 - Player exclusion: 100px minimum distance from any player (up to 10 attempts to find valid position)
 - Fade-in: 500ms
@@ -550,7 +550,8 @@ A large enemy mothership that spawns smaller enemies and fires torpedo barrages.
 - Rotation speed: 0.005 rad/frame
 
 **Spawn:**
-- One carrier at a time (`gameState.carrier`)
+- Tracked in `gameState.carriers[]` array (converted from single `carrier` object for multi-carrier support)
+- Up to 1 carrier at player levels 1-3; up to 2 carriers simultaneously at level 4+
 - Spawns from random screen edge (70px outside), aimed toward center
 - Drift speed: 0.3-0.5 px/frame
 
@@ -790,17 +791,82 @@ Player is considered idle when `gameState.time - mouse.lastMoveTime > 5000`. Whe
 
 ---
 
-## 23. Performance Optimizations
+## 23. Sound Effects (Web Audio API)
+
+### Architecture
+
+Pre-decoded `AudioBuffer` pool via Web Audio API. All sound files are decoded at load time into buffers. Playback creates a new `AudioBufferSourceNode` per instance -- unlimited polyphony, no channel contention.
+
+### Spatial Audio Helper
+
+`sfxAt(buffer, x, y)` plays a sound with distance-based volume and stereo panning:
+- Volume scales inversely with distance from the listener (local player position)
+- Stereo pan computed from horizontal offset relative to the player
+
+### Sound Catalog
+
+| Sound | Trigger |
+|-------|---------|
+| Blaster | Player bullet fired |
+| Laser | Enemy laser fired |
+| Photon torpedo | Enemy torpedo fired |
+| Asteroid explosion | Asteroid destroyed |
+| Ship explosion (6 variants) | Player or enemy death (randomized selection) |
+| Shield pickup | Shield collected |
+
+---
+
+## 24. Background Music
+
+- Auto-discovers Nebula `*.mp3` tracks from the `/sounds/` directory at startup
+- Shuffled playlist per session -- no repeat until all tracks played
+- Tracks play back-to-back with no gap, loops indefinitely
+- Playback starts on splash screen Play button click (satisfies browser autoplay policy)
+
+---
+
+## 25. Splash Screen
+
+Liquid glass splash screen displayed before game starts:
+- "Void Drift" title with rotating color gradient text
+- Frosted glass Play button
+- Click starts the game loop and initiates music playback
+
+---
+
+## 26. CRT Post-Processing
+
+All effects are pure CSS applied to the game canvas layers -- zero JavaScript performance cost.
+
+| Effect | Implementation |
+|--------|---------------|
+| Scanlines | CSS overlay with repeating horizontal lines |
+| Vignette | Radial gradient darkening screen edges |
+| Neon color pop | CSS `filter: saturate() contrast() brightness()` |
+| Phosphor glow | CSS glow effect on canvas elements |
+
+---
+
+## 27. Browser Resize
+
+Game field, starfield canvas, and plasma WebGL canvas all resize correctly on `window.resize`. Canvas dimensions and viewport uniforms are recalculated to match the new window size.
+
+---
+
+## 28. Performance Optimizations
 
 | Optimization | Detail |
 |-------------|--------|
+| **Glow sprite system** | Pre-rendered radial gradient sprites replace Canvas 2D `shadowBlur` (CPU Gaussian blur). Sprites are drawn via `drawImage` instead. FPS improved from ~38 to 120+. |
+| **dt-normalized particles** | Particle life, friction, shrink, and ring wave expansion all normalized to a 60fps baseline (`dt60 = dt / 16.667`). Frame-rate independent at any FPS. |
+| **Batched draw passes** | Enemy drawing split into 3 passes (bodies, charging indicators, shields). Shield drawing split into 2 passes (active, recharging). Lasers split into 2 passes. Minimizes GPU state changes from `globalCompositeOperation` and `shadowBlur` toggling. |
+| **Eliminated JSON deep clone** | Guest rendering loop replaced `JSON.parse(JSON.stringify(gameState))` with a direct reference swap. Removes per-frame serialization overhead. |
 | Plasma half-resolution | Rendered at 0.5x native, upscaled via `drawImage` |
-| shadowBlur batching | Set shadowBlur once per pass rather than per entity |
 | Off-screen culling | All draw functions skip entities more than 50px off-screen |
 | Particle glow LOD | When particle count > 300, glow particles rendered without shadowBlur |
 | Torpedo range limit | 300px max travel caps on-screen count; AoE detonation cleans up |
 | Trail length limits | Player bullets: 4 positions, torpedoes: 5 positions |
-| Entity count caps | Particles: 500, ring waves: 12, enemies: 12, large asteroids: 12, total asteroids: 50, enemy bullets: 20 (30 during carrier barrages), lasers: 8, explosion zones: 8 |
+| Entity count caps | Particles: 500, ring waves: 12, enemies: 12/24 (level-dependent), large asteroids: 12, total asteroids: 50, enemy bullets: 20 (30 during carrier barrages), lasers: 8, explosion zones: 8 |
 | Delta time capping | If dt > 100ms (tab was hidden), cap to 16ms to prevent physics explosion |
 | Visibility API pause | Game state frozen when tab is hidden |
 | Oldest-recycle for particles/rings | `shift()` removes oldest when at cap |
@@ -808,7 +874,7 @@ Player is considered idle when `gameState.time - mouse.lastMoveTime > 5000`. Whe
 
 ---
 
-## 24. File Structure
+## 29. File Structure
 
 ```
 ~/Projects/VoidDrift/
@@ -819,12 +885,13 @@ Player is considered idle when `gameState.time - mouse.lastMoveTime > 5000`. Whe
 ├── CLAUDE.md          -- Claude Code instructions
 ├── SPEC.md            -- This file
 ├── README.md          -- Quick start guide
+├── sounds/            -- Nebula *.mp3 background music tracks (auto-discovered)
 └── node_modules/      -- Dependencies (express, socket.io)
 ```
 
 ---
 
-## 25. Conventions & Constraints
+## 30. Conventions & Constraints
 
 - **Two npm dependencies.** Express and Socket.io only.
 - **No build step.** No bundler, transpiler, or preprocessor.
