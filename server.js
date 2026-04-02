@@ -108,8 +108,13 @@ io.on('connection', (socket) => {
 
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use('/sounds', express.static(__dirname + '/sounds'));
+const musicTracks = readdirSync(__dirname + '/sounds')
+  .filter(f => f.startsWith('Nebula') && f.endsWith('.mp3'))
+  .sort()
+  .map(f => '/sounds/' + f);
 
 app.get('/', (req, res) => {
   const embed = req.query.embed !== undefined;
@@ -955,6 +960,7 @@ function killEnemy(e, giveScore) {
 function finalExplodeEnemy(e) {
     e.alive = false;
     e.dying = false;
+    sfxExplosion(e.x, e.y, 0.5);
     explodeEnemy(e.x, e.y, e.color);
     tryDropShield(e.x, e.y);
     addExplosionZone(e.x, e.y, 120);
@@ -1060,6 +1066,8 @@ function tryDropShield(x, y) {
 }
 
 function explodeAsteroid(x, y, size) {
+    var vol = size === 'large' ? 0.6 : size === 'medium' ? 0.4 : 0.25;
+    sfxAt('asteroid', x, y, { volume: vol, rate: rand(0.7, 1.3) });
     if (size === 'large') {
         gameState.screenShake.intensity = Math.max(gameState.screenShake.intensity, 8);
         gameState.screenFlashAlpha = Math.max(gameState.screenFlashAlpha, 0.1);
@@ -1100,6 +1108,7 @@ function explodeAsteroid(x, y, size) {
 }
 
 function explodePlayer(x, y) {
+    sfxExplosion(x, y, 0.8);
     var count = budgetCount(20, 50);
     var colors = ['#FFFFFF', '#00FFFF', '#0088FF', '#00CCFF'];
     for (var i = 0; i < count; i++) {
@@ -1686,6 +1695,7 @@ function autoFire(p) {
     var bx = p.x + Math.cos(aimAngle) * 14 + Math.cos(perpAngle) * offset;
     var by = p.y + Math.sin(aimAngle) * 14 + Math.sin(perpAngle) * offset;
     gameState.bullets.push(createBullet(bx, by, aimAngle, p.id, p.color));
+    sfxAt('blaster', bx, by, { volume: 0.4, rate: rand(0.9, 1.1) });
 
     p.shotIndex = (p.shotIndex + 1) % shipCount;
 }
@@ -1952,6 +1962,7 @@ function updateCarrier(dt) {
                     }
                     gameState.screenShake.intensity = Math.max(gameState.screenShake.intensity, rand(3, 8));
                     gameState.screenFlashAlpha = Math.max(gameState.screenFlashAlpha, rand(0.04, 0.1));
+                    sfxExplosion(ch.x, ch.y, 0.3);
                 }
                 // Final chunk explosion
                 if (c.dyingTimer >= ch.explodeTime) {
@@ -1973,12 +1984,14 @@ function updateCarrier(dt) {
                     addExplosionZone(ch.x, ch.y, rand(80, 120));
                     gameState.screenShake.intensity = Math.max(gameState.screenShake.intensity, rand(8, 15));
                     gameState.screenFlashAlpha = Math.max(gameState.screenFlashAlpha, rand(0.1, 0.25));
+                    sfxExplosion(ch.x, ch.y, 0.6);
                     // Chunk AoE damage
                     carrierAoE(ch.x, ch.y, 60);
                 }
             }
             // All chunks exploded — final big boom
             if (!anyAlive) {
+                sfxExplosion(c.x, c.y, 1.0);
                 gameState.screenFlashAlpha = 0.6;
                 gameState.screenShake.intensity = 35;
                 spawnRingWave(c.x, c.y, 200, 3, '#FFFFFF');
@@ -2137,6 +2150,7 @@ function updateCarrier(dt) {
                         startX: ox, startY: oy,
                         owner: c,
                     });
+                    sfxAt('torpedo', ox, oy, { volume: 0.3, rate: rand(0.8, 1.2) });
                 }
             }
         }
@@ -2409,6 +2423,7 @@ function updateEnemies(dt) {
                             startX: e.x, startY: e.y,
                             owner: e,
                         });
+                        sfxAt('torpedo', e.x, e.y, { volume: 0.3, rate: rand(0.8, 1.2) });
                     }
                 }
             }
@@ -2473,6 +2488,7 @@ function updateEnemies(dt) {
                                 }
                             }
                             gameState.lasers.push(newLaser);
+                            sfxAt('laser', e.x, e.y, { volume: 0.5, rate: rand(0.85, 1.15) });
                         }
                     }
                 }
@@ -4526,11 +4542,132 @@ window.addEventListener('resize', function() {
 
 startAll();
 
-// === SECTION: Background Music ===
-var _musicTracks = ['/sounds/Nebula 1.mp3', '/sounds/Nebula 2.mp3'];
-var _musicIndex = Math.floor(Math.random() * _musicTracks.length);
-var _musicAudio = null;
+// === SECTION: Audio System (Web Audio API) ===
+var _audioCtx = null;
+var _masterGain = null;   // master volume
+var _sfxGain = null;      // SFX bus
+var _musicGain = null;    // music bus
+var _sfxBuffers = {};     // name -> AudioBuffer (decoded, ready to play)
+var _audioReady = false;
 var _musicStarted = false;
+
+// SFX registry — add entries here as sounds are added to /sounds/
+// Each key is the name you call sfx('name') with, value is the file path
+var _sfxFiles = {
+    'blaster': '/sounds/Single Space Ship Blaster, Short.mp3',
+    'laser': '/sounds/Sci-fi Laser Beam.mp3',
+    'torpedo': '/sounds/Sci-fi  Photon Cannon Charge.mp3',
+    'asteroid': '/sounds/Sci-fi  Astroid Explosion.mp3',
+    'explosion1': '/sounds/Sci-fi  Spaceship Explosion.mp3',
+    'explosion2': '/sounds/Sci-fi  Spaceship Explosion (1).mp3',
+    'explosion3': '/sounds/Sci-fi  Spaceship Explosion (2).mp3',
+    'explosion4': '/sounds/Sci-fi  Spaceship Explosion (3).mp3',
+    'explosion5': '/sounds/Sci-fi  Spaceship Explosion (4).mp3',
+    'explosion6': '/sounds/Sci-fi  Spaceship Explosion (5).mp3',
+};
+
+function initAudio() {
+    if (_audioCtx) return;
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Master -> speakers
+    _masterGain = _audioCtx.createGain();
+    _masterGain.gain.value = 1.0;
+    _masterGain.connect(_audioCtx.destination);
+
+    // SFX bus -> master
+    _sfxGain = _audioCtx.createGain();
+    _sfxGain.gain.value = 0.7;
+    _sfxGain.connect(_masterGain);
+
+    // Music bus -> master
+    _musicGain = _audioCtx.createGain();
+    _musicGain.gain.value = 0.5;
+    _musicGain.connect(_masterGain);
+
+    // Resume if suspended (autoplay policy)
+    if (_audioCtx.state === 'suspended') {
+        _audioCtx.resume();
+    }
+
+    // Load all registered SFX
+    var names = Object.keys(_sfxFiles);
+    for (var i = 0; i < names.length; i++) {
+        loadSfx(names[i], _sfxFiles[names[i]]);
+    }
+
+    _audioReady = true;
+}
+
+function loadSfx(name, url) {
+    fetch(url)
+        .then(function(r) { return r.arrayBuffer(); })
+        .then(function(buf) { return _audioCtx.decodeAudioData(buf); })
+        .then(function(decoded) { _sfxBuffers[name] = decoded; })
+        .catch(function(err) { console.warn('Failed to load SFX: ' + name, err); });
+}
+
+// Play a sound effect — call sfx('blaster') etc.
+// Returns the source node if you need to stop it early.
+// Options: { volume: 0-1, rate: playback speed, pan: -1 to 1 }
+function sfx(name, opts) {
+    if (!_audioReady || !_sfxBuffers[name]) return null;
+    opts = opts || {};
+
+    var source = _audioCtx.createBufferSource();
+    source.buffer = _sfxBuffers[name];
+    source.playbackRate.value = opts.rate || 1;
+
+    // Per-sound gain
+    var gain = _audioCtx.createGain();
+    gain.gain.value = opts.volume !== undefined ? opts.volume : 1;
+
+    // Optional stereo panning
+    if (opts.pan !== undefined && opts.pan !== 0) {
+        var panner = _audioCtx.createStereoPanner();
+        panner.pan.value = opts.pan;
+        source.connect(gain);
+        gain.connect(panner);
+        panner.connect(_sfxGain);
+    } else {
+        source.connect(gain);
+        gain.connect(_sfxGain);
+    }
+
+    source.start(0);
+    return source;
+}
+
+// Spatial SFX helper — auto-calculates volume and pan from world position
+function sfxAt(name, x, y, opts) {
+    opts = opts || {};
+    var cx = canvasW / 2;
+    var cy = canvasH / 2;
+    var dx = x - cx;
+    var dy = y - cy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var maxDist = Math.sqrt(cx * cx + cy * cy);
+    var distVolume = clamp(1 - (dist / maxDist) * 0.6, 0.2, 1);
+    var pan = clamp(dx / cx, -1, 1);
+    opts.volume = (opts.volume !== undefined ? opts.volume : 1) * distVolume;
+    opts.pan = pan;
+    return sfx(name, opts);
+}
+
+function sfxExplosion(x, y, volume) {
+    var idx = randInt(1, 6);
+    sfxAt('explosion' + idx, x, y, { volume: volume || 0.5, rate: rand(0.8, 1.2) });
+}
+
+// === Music (still uses HTML Audio for streaming long tracks) ===
+var _musicTracks = ${JSON.stringify(musicTracks)};
+// Shuffle the playlist so each session gets a different order
+for (var _mi = _musicTracks.length - 1; _mi > 0; _mi--) {
+    var _mj = Math.floor(Math.random() * (_mi + 1));
+    var _mt = _musicTracks[_mi]; _musicTracks[_mi] = _musicTracks[_mj]; _musicTracks[_mj] = _mt;
+}
+var _musicIndex = 0;
+var _musicAudio = null;
 
 function startMusic() {
     if (_musicStarted) return;
@@ -4548,7 +4685,7 @@ function playNextTrack() {
     _musicAudio.play().catch(function() { _musicStarted = false; });
 }
 
-// Splash screen — play button starts music and dismisses
+// === Splash screen ===
 var _splashDismissed = false;
 document.getElementById('playBtn').addEventListener('click', function(e) {
     e.stopPropagation();
@@ -4558,6 +4695,7 @@ document.getElementById('playBtn').addEventListener('click', function(e) {
     splash.style.transition = 'opacity 0.6s ease';
     splash.style.opacity = '0';
     setTimeout(function() { splash.style.display = 'none'; }, 600);
+    initAudio();
     startMusic();
 });
 document.getElementById('splashScreen').addEventListener('click', function() {
