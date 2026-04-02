@@ -735,7 +735,7 @@ var gameState = {
     lasers: [],
     shieldPickups: [],
     score: 0,
-    carrier: null,
+    carriers: [],
     spawnTimers: { enemy: 0, asteroid: 0, carrier: 0 },
     time: 0,
     deltaTime: 0,
@@ -861,8 +861,11 @@ function findSafeSpawn() {
             var e = gameState.enemies[i];
             if (e.alive && gameDist(sx, sy, e.x, e.y) < minDist) { safe = false; break; }
         }
-        if (safe && gameState.carrier && gameState.carrier.alive) {
-            if (gameDist(sx, sy, gameState.carrier.x, gameState.carrier.y) < minDist + 50) safe = false;
+        if (safe) {
+            for (var ci = 0; ci < gameState.carriers.length; ci++) {
+                var cr = gameState.carriers[ci];
+                if (cr.alive && gameDist(sx, sy, cr.x, cr.y) < minDist + 50) { safe = false; break; }
+            }
         }
         if (safe) {
             for (var j = 0; j < gameState.asteroids.length; j++) {
@@ -1083,9 +1086,9 @@ function finalExplodeEnemy(e) {
             a.alive = false;
         }
     }
-    var car = gameState.carrier;
-    if (car && car.alive) {
-        if (gameDist(car.x, car.y, e.x, e.y) < aoeRadius + car.radius) {
+    for (var ci = 0; ci < gameState.carriers.length; ci++) {
+        var car = gameState.carriers[ci];
+        if (car.alive && gameDist(car.x, car.y, e.x, e.y) < aoeRadius + car.radius) {
             carrierTakeDamage(car, 2);
         }
     }
@@ -1724,9 +1727,12 @@ function findTarget(p) {
         if (d < maxRange) candidates.push({ obj: e, dist: d, priority: 0 });
     }
 
-    if (gameState.carrier && gameState.carrier.alive) {
-        var cd = gameDist(p.x, p.y, gameState.carrier.x, gameState.carrier.y);
-        if (cd < maxRange) candidates.push({ obj: gameState.carrier, dist: cd, priority: 0 });
+    for (var ci = 0; ci < gameState.carriers.length; ci++) {
+        var cr = gameState.carriers[ci];
+        if (cr.alive) {
+            var cd = gameDist(p.x, p.y, cr.x, cr.y);
+            if (cd < maxRange) candidates.push({ obj: cr, dist: cd, priority: 0 });
+        }
     }
 
     for (var i = 0; i < gameState.players.length; i++) {
@@ -1910,30 +1916,32 @@ function carrierTakeDamage(c, dmg) {
     }
 }
 
-function updateCarrier(dt) {
+function updateCarriers(dt) {
     var now = gameState.time;
 
-    // Spawn timer
-    if (!gameState.carrier) {
-        var maxPlayerLevel = 0;
-        for (var mli = 0; mli < gameState.players.length; mli++) {
-            if (gameState.players[mli].alive && gameState.players[mli].level > maxPlayerLevel) {
-                maxPlayerLevel = gameState.players[mli].level;
-            }
+    // Determine max player level
+    var maxPlayerLevel = 0;
+    for (var mli = 0; mli < gameState.players.length; mli++) {
+        if (gameState.players[mli].alive && gameState.players[mli].level > maxPlayerLevel) {
+            maxPlayerLevel = gameState.players[mli].level;
         }
-        if (maxPlayerLevel >= 3) {
-            gameState.spawnTimers.carrier += dt;
-            var spawnDelay = rand(30000, 45000);
-            if (gameState.spawnTimers.carrier >= spawnDelay) {
-                gameState.spawnTimers.carrier = 0;
-                gameState.carrier = createCarrier();
-            }
-        }
-        return;
     }
 
-    var c = gameState.carrier;
-    if (!c.alive && !c.dying) { gameState.carrier = null; return; }
+    // Spawn timer — allow up to 2 carriers at level 4, 1 at level 3
+    var maxCarriers = maxPlayerLevel >= 4 ? 2 : 1;
+    if (gameState.carriers.length < maxCarriers && maxPlayerLevel >= 3) {
+        gameState.spawnTimers.carrier += dt;
+        var spawnDelay = rand(30000, 45000);
+        if (gameState.spawnTimers.carrier >= spawnDelay) {
+            gameState.spawnTimers.carrier = 0;
+            gameState.carriers.push(createCarrier());
+        }
+    }
+
+    // Update each carrier
+    for (var ci = gameState.carriers.length - 1; ci >= 0; ci--) {
+    var c = gameState.carriers[ci];
+    if (!c.alive && !c.dying) { gameState.carriers.splice(ci, 1); continue; }
 
     // Multi-stage carrier destruction
     if (c.dying) {
@@ -2089,15 +2097,15 @@ function updateCarrier(dt) {
                 spawnRingWave(c.x, c.y, 200, 3, '#FFFFFF');
                 addExplosionZone(c.x, c.y, 250);
                 carrierAoE(c.x, c.y, 150);
-                gameState.carrier = null;
-                return;
+                gameState.carriers.splice(ci, 1);
+                continue;
             }
         }
 
         // Timeout safety — force finish
         if (progress >= 1.0 && c.chunks.length === 0) {
-            gameState.carrier = null;
-            return;
+            gameState.carriers.splice(ci, 1);
+            continue;
         }
 
         // Update carrier subsystems during dying (shields, fade etc still needed for draw)
@@ -2184,7 +2192,7 @@ function updateCarrier(dt) {
 
     // Launch enemies
     c.launchTimer += dt;
-    if (c.launchTimer >= c.launchInterval && gameState.enemies.length < 12 && c.fadeIn >= 1) {
+    if (c.launchTimer >= c.launchInterval && gameState.enemies.length < getMaxEnemies() && c.fadeIn >= 1) {
         c.launchTimer = 0;
         var newEnemy = createEnemy();
         newEnemy.x = c.x;
@@ -2258,8 +2266,10 @@ function updateCarrier(dt) {
 
     // Remove if way off screen
     if (c.x < -300 || c.x > canvasW + 300 || c.y < -300 || c.y > canvasH + 300) {
-        gameState.carrier = null;
+        gameState.carriers.splice(ci, 1);
+        continue;
     }
+    } // end carriers loop
 }
 
 function drawCarrier(c) {
@@ -2354,12 +2364,22 @@ function drawCarrier(c) {
     }
 }
 
+function getMaxEnemies() {
+    var maxLevel = 0;
+    for (var i = 0; i < gameState.players.length; i++) {
+        if (gameState.players[i].alive && gameState.players[i].level > maxLevel) {
+            maxLevel = gameState.players[i].level;
+        }
+    }
+    return maxLevel >= 4 ? 24 : 12;
+}
+
 function updateEnemies(dt) {
     var now = gameState.time;
 
     gameState.spawnTimers.enemy += dt;
     var spawnInterval = rand(2500, 5000);
-    if (gameState.spawnTimers.enemy >= spawnInterval && gameState.enemies.length < 12) {
+    if (gameState.spawnTimers.enemy >= spawnInterval && gameState.enemies.length < getMaxEnemies()) {
         gameState.spawnTimers.enemy = 0;
         var newEnemy = createEnemy();
         // Chance of starting with a shield based on max player level
@@ -2962,48 +2982,50 @@ function checkCollisions() {
         }
     }
 
-    // Player bullets vs carrier
-    var car = gameState.carrier;
-    if (car && car.alive) {
-        for (var bi = bullets.length - 1; bi >= 0; bi--) {
-            var b = bullets[bi];
-            if (!b.alive) continue;
-            if (!car.alive) break;
-            if (gameDist(b.x, b.y, car.x, car.y) < b.radius + car.radius) {
-                b.alive = false;
-                if (car.shields > 0) {
-                    car.shields--;
-                    sparkShield(b.x, b.y);
-                } else {
-                    bulletImpact(b.x, b.y);
-                    carrierTakeDamage(car, 1);
+    // Player bullets vs carriers
+    for (var cci = 0; cci < gameState.carriers.length; cci++) {
+        var car = gameState.carriers[cci];
+        if (car && car.alive) {
+            for (var bi = bullets.length - 1; bi >= 0; bi--) {
+                var b = bullets[bi];
+                if (!b.alive) continue;
+                if (!car.alive) break;
+                if (gameDist(b.x, b.y, car.x, car.y) < b.radius + car.radius) {
+                    b.alive = false;
+                    if (car.shields > 0) {
+                        car.shields--;
+                        sparkShield(b.x, b.y);
+                    } else {
+                        bulletImpact(b.x, b.y);
+                        carrierTakeDamage(car, 1);
+                    }
                 }
             }
         }
-    }
 
-    // Player ships vs carrier
-    if (car && car.alive) {
-        for (var cpi4 = 0; cpi4 < gameState.players.length; cpi4++) {
-            var p = gameState.players[cpi4];
-            if (p && p.alive && !p.invulnerable) {
-                if (gameDist(p.x, p.y, car.x, car.y) < p.radius + car.radius) {
-                    hitPlayer(p, car.x, car.y);
+        // Player ships vs carrier
+        if (car && car.alive) {
+            for (var cpi4 = 0; cpi4 < gameState.players.length; cpi4++) {
+                var p = gameState.players[cpi4];
+                if (p && p.alive && !p.invulnerable) {
+                    if (gameDist(p.x, p.y, car.x, car.y) < p.radius + car.radius) {
+                        hitPlayer(p, car.x, car.y);
+                    }
                 }
             }
         }
-    }
 
-    // Asteroid vs carrier
-    if (car && car.alive) {
-        for (var ai = asteroids.length - 1; ai >= 0; ai--) {
-            var a = asteroids[ai];
-            if (!a.alive) continue;
-            if (gameDist(a.x, a.y, car.x, car.y) < a.radius + car.radius) {
-                carrierTakeDamage(car, 5);
-                explodeAsteroid(a.x, a.y, a.size);
-                breakAsteroid(a);
-                a.alive = false;
+        // Asteroid vs carrier
+        if (car && car.alive) {
+            for (var ai = asteroids.length - 1; ai >= 0; ai--) {
+                var a = asteroids[ai];
+                if (!a.alive) continue;
+                if (gameDist(a.x, a.y, car.x, car.y) < a.radius + car.radius) {
+                    carrierTakeDamage(car, 5);
+                    explodeAsteroid(a.x, a.y, a.size);
+                    breakAsteroid(a);
+                    a.alive = false;
+                }
             }
         }
     }
@@ -3062,10 +3084,12 @@ function hitPlayer(p, hitX, hitY) {
                 aa.alive = false;
             }
         }
-        var car = gameState.carrier;
-        if (car && car.alive) {
-            if (gameDist(car.x, car.y, p.x, p.y) < aoeRadius + car.radius) {
-                carrierTakeDamage(car, 5);
+        for (var cci = 0; cci < gameState.carriers.length; cci++) {
+            var car = gameState.carriers[cci];
+            if (car && car.alive) {
+                if (gameDist(car.x, car.y, p.x, p.y) < aoeRadius + car.radius) {
+                    carrierTakeDamage(car, 5);
+                }
             }
         }
     }
@@ -3280,11 +3304,13 @@ function updateShieldPickups(dt) {
                     aa.alive = false;
                 }
             }
-            // AoE vs carrier
-            var aoeCarrier = gameState.carrier;
-            if (aoeCarrier && aoeCarrier.alive) {
-                if (gameDist(aoeCarrier.x, aoeCarrier.y, sp.x, sp.y) < aoeRadius + aoeCarrier.radius) {
-                    carrierTakeDamage(aoeCarrier, 3);
+            // AoE vs carriers
+            for (var cci = 0; cci < gameState.carriers.length; cci++) {
+                var aoeCarrier = gameState.carriers[cci];
+                if (aoeCarrier && aoeCarrier.alive) {
+                    if (gameDist(aoeCarrier.x, aoeCarrier.y, sp.x, sp.y) < aoeRadius + aoeCarrier.radius) {
+                        carrierTakeDamage(aoeCarrier, 3);
+                    }
                 }
             }
             gameState.shieldPickups.splice(i, 1);
@@ -3834,8 +3860,11 @@ function renderGame() {
     drawAsteroids();
     _perf.end('draw:asteroids');
     _perf.start('draw:carrier');
-    if (gameState.carrier && (gameState.carrier.alive || gameState.carrier.dying)) {
-        drawCarrier(gameState.carrier);
+    for (var dci = 0; dci < gameState.carriers.length; dci++) {
+        var dcar = gameState.carriers[dci];
+        if (dcar.alive || dcar.dying) {
+            drawCarrier(dcar);
+        }
     }
     _perf.end('draw:carrier');
     _perf.start('draw:enemies');
@@ -3986,7 +4015,7 @@ function initGame(canvasElement) {
     gameState.spawnTimers.enemy = 0;
     gameState.spawnTimers.asteroid = 0;
     gameState.spawnTimers.carrier = 0;
-    gameState.carrier = null;
+    gameState.carriers = [];
     gameState.time = 0;
     gameState.deltaTime = 0;
     gameState.screenShake.intensity = 0;
@@ -4029,7 +4058,7 @@ function updateGame(timestamp, mouseX, mouseY, mouseDown) {
     updateBullets(dt);
     _perf.end('update:bullets');
     _perf.start('update:carrier');
-    updateCarrier(dt);
+    updateCarriers(dt);
     _perf.end('update:carrier');
     _perf.start('update:enemies');
     updateEnemies(dt);
@@ -4059,7 +4088,7 @@ function updateGame(timestamp, mouseX, mouseY, mouseDown) {
     updateRingWaves(dt);
     _perf.end('update:rings');
 
-    _perf.count('carrier', gameState.carrier ? 1 : 0);
+    _perf.count('carrier', gameState.carriers.length);
     _perf.count('enemies', gameState.enemies.length);
     _perf.count('asteroids', gameState.asteroids.length);
     _perf.count('bullets', gameState.bullets.length);
@@ -4287,17 +4316,19 @@ function serializeState() {
                 baseRadius: a.baseRadius,
             };
         }),
-        carrier: gameState.carrier ? {
-            id: gameState.carrier.id, x: gameState.carrier.x, y: gameState.carrier.y,
-            radius: gameState.carrier.radius, rotation: gameState.carrier.rotation,
-            alive: gameState.carrier.alive, dying: gameState.carrier.dying,
-            hp: gameState.carrier.hp, maxHp: gameState.carrier.maxHp,
-            shields: gameState.carrier.shields, maxShields: gameState.carrier.maxShields,
-            shieldAngle: gameState.carrier.shieldAngle, fadeIn: gameState.carrier.fadeIn,
-            color: gameState.carrier.color, damageFlashTimer: gameState.carrier.damageFlashTimer,
-            chunks: gameState.carrier.chunks || [],
-            vx: gameState.carrier.vx, vy: gameState.carrier.vy,
-        } : null,
+        carriers: gameState.carriers.map(function(car) {
+            return {
+                id: car.id, x: car.x, y: car.y,
+                radius: car.radius, rotation: car.rotation,
+                alive: car.alive, dying: car.dying,
+                hp: car.hp, maxHp: car.maxHp,
+                shields: car.shields, maxShields: car.maxShields,
+                shieldAngle: car.shieldAngle, fadeIn: car.fadeIn,
+                color: car.color, damageFlashTimer: car.damageFlashTimer,
+                chunks: car.chunks || [],
+                vx: car.vx, vy: car.vy,
+            };
+        }),
         bullets: gameState.bullets.map(function(b) {
             return {
                 id: b.id, x: b.x, y: b.y, angle: b.angle,
@@ -4341,7 +4372,7 @@ function applyRemoteState(state) {
     gameState.players = state.players;
     gameState.enemies = state.enemies;
     gameState.asteroids = state.asteroids;
-    gameState.carrier = state.carrier;
+    gameState.carriers = state.carriers;
     gameState.bullets = state.bullets;
     gameState.enemyBullets = state.enemyBullets;
     gameState.lasers = state.lasers;
@@ -4396,10 +4427,28 @@ function diffAndTriggerEffects(prev, curr) {
         }
     }
 
-    // Carrier death
-    if (prev.carrier && prev.carrier.alive && curr.carrier && !curr.carrier.alive) {
-        gameState.screenFlashAlpha = 0.6;
-        gameState.screenShake.intensity = 25;
+    // Carrier deaths
+    var prevCarrierIds = {};
+    for (var pci = 0; pci < (prev.carriers || []).length; pci++) {
+        var pc = prev.carriers[pci];
+        if (pc.alive) prevCarrierIds[pc.id] = pc;
+    }
+    for (var cci = 0; cci < (curr.carriers || []).length; cci++) {
+        var cc = curr.carriers[cci];
+        if (!cc.alive && prevCarrierIds[cc.id]) {
+            gameState.screenFlashAlpha = 0.6;
+            gameState.screenShake.intensity = 25;
+        }
+    }
+    // Carriers that disappeared entirely
+    var currCarrierIds = {};
+    for (var cci2 = 0; cci2 < (curr.carriers || []).length; cci2++) currCarrierIds[curr.carriers[cci2].id] = true;
+    for (var pci2 = 0; pci2 < (prev.carriers || []).length; pci2++) {
+        var pc2 = prev.carriers[pci2];
+        if ((pc2.alive || pc2.dying) && !currCarrierIds[pc2.id]) {
+            gameState.screenFlashAlpha = 0.6;
+            gameState.screenShake.intensity = 25;
+        }
     }
 }
 
