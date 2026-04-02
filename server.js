@@ -2112,7 +2112,7 @@ function updateCarriers(dt) {
         c.damageFlashTimer -= dt;
         c.shieldAngle += 2 * (dt / 1000);
         c.rotation += c.rotationSpeed;
-        return;
+        continue;
     }
 
     // Fade in
@@ -2201,10 +2201,16 @@ function updateCarriers(dt) {
         if (Math.random() < 0.7) {
             newEnemy.behavior = 'aggressive';
         }
-        // Speed boost outward from carrier
-        var launchAngle = rand(0, Math.PI * 2);
-        newEnemy.vx = Math.cos(launchAngle) * 3;
-        newEnemy.vy = Math.sin(launchAngle) * 3;
+        // Launch toward nearest player (or random if none alive)
+        var launchTarget = findNearestPlayer(c.x, c.y);
+        var launchAngle;
+        if (launchTarget) {
+            launchAngle = Math.atan2(launchTarget.y - c.y, launchTarget.x - c.x) + rand(-0.5, 0.5);
+        } else {
+            launchAngle = rand(0, Math.PI * 2);
+        }
+        newEnemy.vx = Math.cos(launchAngle) * 2;
+        newEnemy.vy = Math.sin(launchAngle) * 2;
         newEnemy.fadeIn = 0;
         newEnemy.spawnTime = now;
         var cplNearest = findNearestPlayer(c.x, c.y);
@@ -4773,7 +4779,7 @@ for (var _mi = _musicTracks.length - 1; _mi > 0; _mi--) {
     var _mj = Math.floor(Math.random() * (_mi + 1));
     var _mt = _musicTracks[_mi]; _musicTracks[_mi] = _musicTracks[_mj]; _musicTracks[_mj] = _mt;
 }
-var _musicIndex = 0;
+var _musicIndex = Math.floor(Math.random() * _musicTracks.length);
 var _musicAudio = null;
 
 function startMusic() {
