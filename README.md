@@ -66,6 +66,18 @@ Single-file architecture. The entire game -- server, HTML, CSS, JavaScript, GLSL
 | **Rendering** | WebGL (plasma nebula) + Canvas 2D (starfield, game) |
 | **Dependencies** | 2 (express, socket.io) |
 
+## Origin Story
+
+This game was never supposed to exist. It started as [Project Home](https://github.com/Voxinator) -- a simple localhost dashboard to display all my project folders as cards. Clean, minimal, done in an afternoon.
+
+But the background felt empty. So I added a WebGL plasma nebula -- procedural simplex noise with color cycling. Looked cool. Then twinkling stars on a parallax canvas layer. Even better. Then I thought it would be neat if a little ship followed your mouse cursor around while you browsed your projects.
+
+Then the ship needed something to shoot at. So I added asteroids that broke into smaller pieces. Then enemies -- five color-coded types with different weapons and AI behaviors. Then shields, then a leveling system, then a carrier mothership boss that launches fighters and fires torpedo barrages. Then chain-reaction explosions. Then a drift mechanic because the movement felt too simple.
+
+Two days later, the "background decoration" had a full game loop, a boss fight, and a particle system with dynamic LOD budgeting. The dashboard still worked fine -- the game just played silently behind it while you clicked around your projects.
+
+At that point it deserved its own home. So I pulled it out, gave it a name, and added LAN multiplayer. Void Drift is what happens when scope creep wins and you just lean into it.
+
 ---
 
 Built by [Voxinator](https://github.com/Voxinator).
