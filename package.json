@@ -1,0 +1,17 @@
+{
+  "name": "void-drift",
+  "version": "1.0.0",
+  "description": "Canvas 2D space shooter with LAN multiplayer",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["game", "multiplayer", "canvas"],
+  "author": "Brian Taylor",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5",
+    "socket.io": "^4"
+  }
+}

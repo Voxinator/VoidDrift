@@ -1,0 +1,10 @@
+{
+  "name": "Void Drift",
+  "description": "Canvas 2D space shooter with LAN multiplayer",
+  "icon": "🚀",
+  "color": "#00FFFF",
+  "tags": ["web"],
+  "url": "http://localhost:3800",
+  "status": "wip",
+  "created": "2026-04-01"
+}
