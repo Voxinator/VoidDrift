@@ -3114,6 +3114,7 @@ function updateShieldPickups(dt) {
                 if (gameDist(p.x, p.y, sp.x, sp.y) < sp.pickupRadius + p.radius) {
                     p.shields++;
                     sp.alive = false;
+                    sfxAt('shield-pickup', sp.x, sp.y, { volume: 0.5 });
                     // Pickup sparkle effect
                     sparkShield(sp.x, sp.y);
                     // Check for upgrade
@@ -4564,6 +4565,7 @@ var _sfxFiles = {
     'explosion4': '/sounds/Sci-fi  Spaceship Explosion (3).mp3',
     'explosion5': '/sounds/Sci-fi  Spaceship Explosion (4).mp3',
     'explosion6': '/sounds/Sci-fi  Spaceship Explosion (5).mp3',
+    'shield-pickup': '/sounds/Sci-fi  Electric Shield Charge Up.mp3',
 };
 
 function initAudio() {
