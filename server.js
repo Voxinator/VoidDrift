@@ -769,7 +769,30 @@ document.addEventListener('keydown', function(ev) {
             gameState.paused = !gameState.paused;
         }
     }
+    if (ev.key === '\`') {
+        _debugMode = !_debugMode;
+    }
+    if (_debugMode && ev.key >= '1' && ev.key <= '4') {
+        var targetLevel = parseInt(ev.key);
+        for (var di = 0; di < gameState.players.length; di++) {
+            var dp = gameState.players[di];
+            if (dp.isLocal || (role === 'host' && di === 0)) {
+                dp.level = targetLevel;
+                dp.baseShields = targetLevel;
+                dp.shields = targetLevel;
+                dp.fireRate = 1000 / targetLevel;
+                dp.shotIndex = 0;
+                _godMode = false;
+                break;
+            }
+        }
+    }
+    if (_debugMode && ev.key === '5') {
+        _godMode = !_godMode;
+    }
 });
+var _debugMode = false;
+var _godMode = false;
 var _perf = {
     enabled: true,
     sampleInterval: 1000,
@@ -1991,8 +2014,8 @@ function updateCarriers(dt) {
             spawnRingWave(c.x, c.y, 100, 4, '#FFFFFF');
             // Spawn 5-7 large debris chunks that fly outward
             var numChunks = randInt(5, 7);
-            for (var ci = 0; ci < numChunks; ci++) {
-                var ca = (ci / numChunks) * Math.PI * 2 + rand(-0.3, 0.3);
+            for (var chi = 0; chi < numChunks; chi++) {
+                var ca = (chi / numChunks) * Math.PI * 2 + rand(-0.3, 0.3);
                 var cverts = [];
                 var cnv = randInt(4, 6);
                 for (var cvi = 0; cvi < cnv; cvi++) {
@@ -2028,8 +2051,8 @@ function updateCarriers(dt) {
         // Phase 3 (50-100%): chunks drift and explode individually
         if (c.chunks.length > 0) {
             var anyAlive = false;
-            for (var ci = 0; ci < c.chunks.length; ci++) {
-                var ch = c.chunks[ci];
+            for (var chi = 0; chi < c.chunks.length; chi++) {
+                var ch = c.chunks[chi];
                 if (!ch.alive) continue;
                 anyAlive = true;
                 ch.x += ch.vx;
@@ -2139,23 +2162,56 @@ function updateCarriers(dt) {
     // Shield orbit angle
     c.shieldAngle += 1.5 * (dt / 1000);
 
-    // Movement AI: maintain medium distance from nearest player
+    // Movement AI: flank the nearest player, avoid other carriers
     var nearP = findNearestPlayer(c.x, c.y);
     if (nearP) {
         var dist = gameDist(c.x, c.y, nearP.x, nearP.y);
         var angle = Math.atan2(nearP.y - c.y, nearP.x - c.x);
+
+        // With 2 carriers, try to approach from opposite sides of the player
+        var flankOffset = 0;
+        for (var oci = 0; oci < gameState.carriers.length; oci++) {
+            var otherC = gameState.carriers[oci];
+            if (otherC === c || !otherC.alive) continue;
+            // Angle from player to the other carrier
+            var otherAngle = Math.atan2(otherC.y - nearP.y, otherC.x - nearP.x);
+            // We want to be roughly opposite — aim for 180 degrees away from the other carrier
+            var targetAngle = otherAngle + Math.PI;
+            var approachAngle = Math.atan2(c.y - nearP.y, c.x - nearP.x);
+            var flankDiff = angleWrap(targetAngle - approachAngle);
+            // Steer around the player to get to the opposite side
+            flankOffset = flankDiff * 0.01 * (dt / 16);
+        }
+
         if (dist < 200) {
-            // Too close, drift away
-            c.vx += Math.cos(angle + Math.PI) * 0.02 * (dt / 16);
-            c.vy += Math.sin(angle + Math.PI) * 0.02 * (dt / 16);
-        } else if (dist > 400) {
-            // Too far, drift toward
-            c.vx += Math.cos(angle) * 0.015 * (dt / 16);
-            c.vy += Math.sin(angle) * 0.015 * (dt / 16);
+            c.vx += Math.cos(angle + Math.PI) * 0.025 * (dt / 16);
+            c.vy += Math.sin(angle + Math.PI) * 0.025 * (dt / 16);
+        } else if (dist > 350) {
+            c.vx += Math.cos(angle + flankOffset) * 0.02 * (dt / 16);
+            c.vy += Math.sin(angle + flankOffset) * 0.02 * (dt / 16);
+        } else {
+            // In sweet spot — orbit and apply flank steering
+            c.vx += Math.cos(angle + Math.PI / 2 + flankOffset) * 0.01 * (dt / 16);
+            c.vy += Math.sin(angle + Math.PI / 2 + flankOffset) * 0.01 * (dt / 16);
         }
     }
 
-    // Asteroid avoidance — steer away from nearby asteroids
+    // Carrier-carrier repulsion — strong push to avoid overlap
+    for (var oci2 = 0; oci2 < gameState.carriers.length; oci2++) {
+        var otherC2 = gameState.carriers[oci2];
+        if (otherC2 === c || !otherC2.alive) continue;
+        var cDist = gameDist(c.x, c.y, otherC2.x, otherC2.y);
+        var minSep = c.radius + otherC2.radius + 120;
+        if (cDist < minSep && cDist > 0) {
+            var repX = (c.x - otherC2.x) / cDist;
+            var repY = (c.y - otherC2.y) / cDist;
+            var repStr = (1 - cDist / minSep) * 0.1 * (dt / 16);
+            c.vx += repX * repStr;
+            c.vy += repY * repStr;
+        }
+    }
+
+    // Asteroid avoidance
     for (var ai = 0; ai < gameState.asteroids.length; ai++) {
         var ast = gameState.asteroids[ai];
         if (!ast.alive) continue;
@@ -2170,16 +2226,6 @@ function updateCarriers(dt) {
         }
     }
 
-    // Drift direction change
-    c.driftChangeTimer -= dt;
-    if (c.driftChangeTimer <= 0) {
-        c.driftChangeTimer = rand(5000, 8000);
-        var newAngle = rand(0, Math.PI * 2);
-        var speed = rand(0.3, 0.5);
-        c.vx = Math.cos(newAngle) * speed;
-        c.vy = Math.sin(newAngle) * speed;
-    }
-
     // Clamp speed
     var spd = Math.sqrt(c.vx * c.vx + c.vy * c.vy);
     if (spd > 0.6) {
@@ -2190,43 +2236,53 @@ function updateCarriers(dt) {
     c.x += c.vx * (dt / 16);
     c.y += c.vy * (dt / 16);
 
-    // Launch enemies
+    // Launch enemies — double frequency when below 75% capacity
+    var launchInterval = c.launchInterval;
+    if (gameState.enemies.length < getMaxEnemies() * 0.75) {
+        launchInterval = c.launchInterval / 2;
+    }
     c.launchTimer += dt;
-    if (c.launchTimer >= c.launchInterval && gameState.enemies.length < getMaxEnemies() && c.fadeIn >= 1) {
+    if (c.launchTimer >= launchInterval && gameState.enemies.length < getMaxEnemies() && c.fadeIn >= 1) {
         c.launchTimer = 0;
         var newEnemy = createEnemy();
         newEnemy.x = c.x;
         newEnemy.y = c.y;
+        newEnemy.elite = true;
         newEnemy.pursuit = true;
-        if (Math.random() < 0.7) {
-            newEnemy.behavior = 'aggressive';
-        }
-        // Launch toward nearest player (or random if none alive)
+        newEnemy.behavior = 'aggressive';
+        newEnemy.shields = 5;
+        newEnemy.hp = 3;
+        // Launch away from barrage direction if active, otherwise toward player
         var launchTarget = findNearestPlayer(c.x, c.y);
         var launchAngle;
-        if (launchTarget) {
-            launchAngle = Math.atan2(launchTarget.y - c.y, launchTarget.x - c.x) + rand(-0.5, 0.5);
+        if (c._barrageActive && launchTarget) {
+            // Launch perpendicular to barrage — avoid the torpedo cone
+            var side = Math.random() > 0.5 ? 1 : -1;
+            launchAngle = c._barrageAngle + Math.PI / 2 * side + rand(-0.3, 0.3);
+        } else if (launchTarget) {
+            launchAngle = Math.atan2(launchTarget.y - c.y, launchTarget.x - c.x) + rand(-0.4, 0.4);
         } else {
             launchAngle = rand(0, Math.PI * 2);
         }
-        newEnemy.vx = Math.cos(launchAngle) * 2;
-        newEnemy.vy = Math.sin(launchAngle) * 2;
+        // Slow launch — they accelerate via pursuit AI, not launch velocity
+        newEnemy.vx = Math.cos(launchAngle) * 0.5;
+        newEnemy.vy = Math.sin(launchAngle) * 0.5;
         newEnemy.fadeIn = 0;
         newEnemy.spawnTime = now;
-        var cplNearest = findNearestPlayer(c.x, c.y);
-        var cpl = cplNearest ? cplNearest.level : 1;
-        var cShieldChance = cpl === 2 ? 0.25 : cpl === 3 ? 0.5 : cpl >= 4 ? 0.75 : 0;
-        if (Math.random() < cShieldChance) newEnemy.shields = 1;
         gameState.enemies.push(newEnemy);
     }
 
-    // Carrier torpedo barrage — bullet hell (only at player level 4)
+    // Carrier torpedo barrage — bullet hell (only at player level 4, within range)
     var torpTarget = findNearestPlayer(c.x, c.y);
     var maxPL = 0;
     for (var mli2 = 0; mli2 < gameState.players.length; mli2++) {
         if (gameState.players[mli2].alive && gameState.players[mli2].level > maxPL) maxPL = gameState.players[mli2].level;
     }
-    if (torpTarget && maxPL >= 4 && c.fadeIn >= 1) {
+    var torpDist = torpTarget ? gameDist(c.x, c.y, torpTarget.x, torpTarget.y) : Infinity;
+    c._barrageActive = false;
+    if (torpTarget && maxPL >= 4 && c.fadeIn >= 1 && torpDist < 500) {
+        c._barrageActive = true;
+        c._barrageAngle = Math.atan2(torpTarget.y - c.y, torpTarget.x - c.x);
         // Active burst — alternating cannons, spread across 45-degree arc
         if (c.burstRemaining > 0) {
             c.burstTimer += dt;
@@ -2449,17 +2505,41 @@ function updateEnemies(dt) {
         }
 
         var nearestP = findNearestPlayer(e.x, e.y);
-        if (nearestP) {
+        // Elite enemies near a carrier with active barrage: check if in barrage zone
+        var inBarrageZone = false;
+        if (e.elite) {
+            for (var bci = 0; bci < gameState.carriers.length; bci++) {
+                var bc = gameState.carriers[bci];
+                if (bc && bc.alive && bc._barrageActive) {
+                    var distToCarrier = gameDist(e.x, e.y, bc.x, bc.y);
+                    if (distToCarrier < 500) {
+                        // Check if roughly in the barrage cone
+                        var angleToEnemy = Math.atan2(e.y - bc.y, e.x - bc.x);
+                        var angleDiff = Math.abs(angleWrap(angleToEnemy - bc._barrageAngle));
+                        if (angleDiff < Math.PI / 3) { // within 60-degree cone
+                            inBarrageZone = true;
+                            // Flee perpendicular to barrage
+                            var fleeAngle = bc._barrageAngle + (angleWrap(angleToEnemy - bc._barrageAngle) > 0 ? Math.PI / 2 : -Math.PI / 2);
+                            e.vx += Math.cos(fleeAngle) * 2.0 * (dt / 1000);
+                            e.vy += Math.sin(fleeAngle) * 2.0 * (dt / 1000);
+                        }
+                    }
+                }
+            }
+        }
+        if (nearestP && !inBarrageZone) {
             var pa = Math.atan2(nearestP.y - e.y, nearestP.x - e.x);
+            var pursuitStr = e.elite ? 1.2 : 0.3;
             if (e.behavior === 'aggressive') {
-                e.vx += Math.cos(pa) * 0.8 * (dt / 1000);
-                e.vy += Math.sin(pa) * 0.8 * (dt / 1000);
+                pursuitStr = e.elite ? 1.5 : 0.8;
+                e.vx += Math.cos(pa) * pursuitStr * (dt / 1000);
+                e.vy += Math.sin(pa) * pursuitStr * (dt / 1000);
             } else if (e.behavior === 'retreat') {
                 e.vx -= Math.cos(pa) * 0.6 * (dt / 1000);
                 e.vy -= Math.sin(pa) * 0.6 * (dt / 1000);
             } else if (e.pursuit) {
-                e.vx += Math.cos(pa) * 0.3 * (dt / 1000);
-                e.vy += Math.sin(pa) * 0.3 * (dt / 1000);
+                e.vx += Math.cos(pa) * pursuitStr * (dt / 1000);
+                e.vy += Math.sin(pa) * pursuitStr * (dt / 1000);
             }
         }
 
@@ -2482,18 +2562,36 @@ function updateEnemies(dt) {
             }
         }
 
-        // Weak asteroid avoidance — sometimes they dodge, sometimes they don't
+        // Asteroid avoidance — elites dodge harder
+        var astAvoidMult = e.elite ? 0.08 : 0.02;
+        var astAvoidRange = e.elite ? 50 : 30;
         for (var aai = 0; aai < gameState.asteroids.length; aai++) {
             var ast = gameState.asteroids[aai];
             if (!ast.alive) continue;
             var aDist = gameDist(e.x, e.y, ast.x, ast.y);
-            var avoidDist = e.radius + ast.radius + 30;
+            var avoidDist = e.radius + ast.radius + astAvoidRange;
             if (aDist < avoidDist && aDist > 0) {
                 var awayX = (e.x - ast.x) / aDist;
                 var awayY = (e.y - ast.y) / aDist;
-                var avoidStr = (1 - aDist / avoidDist) * 0.02 * (dt / 16);
+                var avoidStr = (1 - aDist / avoidDist) * astAvoidMult * (dt / 16);
                 e.vx += awayX * avoidStr;
                 e.vy += awayY * avoidStr;
+            }
+        }
+
+        // Torpedo avoidance — elites dodge much harder with wider detection
+        var torpAvoidRange = e.elite ? 100 : 60;
+        var torpAvoidStr = e.elite ? 0.2 : 0.08;
+        for (var ebi = 0; ebi < gameState.enemyBullets.length; ebi++) {
+            var eb = gameState.enemyBullets[ebi];
+            if (!eb.alive) continue;
+            var ebDist = gameDist(e.x, e.y, eb.x, eb.y);
+            if (ebDist < torpAvoidRange && ebDist > 0) {
+                var ebAwayX = (e.x - eb.x) / ebDist;
+                var ebAwayY = (e.y - eb.y) / ebDist;
+                var ebAvStr = (1 - ebDist / torpAvoidRange) * torpAvoidStr * (dt / 16);
+                e.vx += ebAwayX * ebAvStr;
+                e.vy += ebAwayY * ebAvStr;
             }
         }
 
@@ -2608,7 +2706,8 @@ function updateEnemies(dt) {
             }
         }
 
-        if (e.x < -100 || e.x > canvasW + 100 || e.y < -100 || e.y > canvasH + 100) {
+        var despawnMargin = e.elite ? 300 : 100;
+        if (e.x < -despawnMargin || e.x > canvasW + despawnMargin || e.y < -despawnMargin || e.y > canvasH + despawnMargin) {
             e.alive = false;
         }
         if (!e.alive) {
@@ -3051,6 +3150,10 @@ function checkCollisions() {
 }
 
 function hitPlayer(p, hitX, hitY) {
+    if (_godMode && (p.isLocal || (role === 'host' && gameState.players.indexOf(p) === 0))) {
+        sparkShield(hitX, hitY);
+        return;
+    }
     p.drifting = false;
     p.driftVx = 0;
     p.driftVy = 0;
@@ -3510,12 +3613,37 @@ function drawEnemies() {
             drawColor = '#FFFFFF';
         }
 
-        drawGlow(gameCtx, 0, 0, drawColor, e.radius + 10, 0.4);
+        if (e.elite && !e.dying) {
+            // Pulsing elite ring
+            var elitePulse = 0.4 + Math.sin(gameState.time / 200) * 0.25;
+            drawGlow(gameCtx, 0, 0, '#FFFFFF', e.radius + 24, elitePulse);
+            drawGlow(gameCtx, 0, 0, drawColor, e.radius + 16, 0.6);
+            // White outline ring
+            var ringPulse = 0.3 + Math.sin(gameState.time / 150) * 0.2;
+            gameCtx.strokeStyle = 'rgba(255,255,255,' + ringPulse + ')';
+            gameCtx.lineWidth = 1.5;
+            gameCtx.beginPath();
+            gameCtx.arc(0, 0, e.radius + 6, 0, Math.PI * 2);
+            gameCtx.stroke();
+        } else {
+            drawGlow(gameCtx, 0, 0, drawColor, e.radius + 10, 0.4);
+        }
 
         if (e.type === 'saucer') {
-            drawSaucer(e, drawColor);
+            drawSaucer(e, e.elite && !e.dying ? '#FFFFFF' : drawColor);
         } else {
-            drawFighter(e, drawColor);
+            drawFighter(e, e.elite && !e.dying ? '#FFFFFF' : drawColor);
+        }
+
+        // Draw colored core on top for elites so the color still shows
+        if (e.elite && !e.dying) {
+            gameCtx.globalAlpha *= 0.5;
+            if (e.type === 'saucer') {
+                drawSaucer(e, drawColor);
+            } else {
+                drawFighter(e, drawColor);
+            }
+            gameCtx.globalAlpha /= 0.5;
         }
 
         if (e.damaged && Math.random() > 0.7) {
@@ -3921,7 +4049,8 @@ function renderGame() {
     var pd = _perf.display;
     var pc = _perf.countsDisplay;
     var pauseLabel = gameState.paused ? '  PAUSED' : '';
-    var perfLines = [_fpsDisplay + ' FPS  budget:' + Math.round(_particleBudget * 100) + '%' + pauseLabel];
+    var debugLabel = _debugMode ? (_godMode ? '  DEBUG [GOD]' : '  DEBUG') : '';
+    var perfLines = [_fpsDisplay + ' FPS  budget:' + Math.round(_particleBudget * 100) + '%' + pauseLabel + debugLabel];
     if (_perfExpanded) {
         perfLines = [
             _fpsDisplay + ' FPS  budget:' + Math.round(_particleBudget * 100) + '%',
@@ -4302,7 +4431,7 @@ function serializeState() {
                 maxShields: e.maxShields, shieldAngle: e.shieldAngle,
                 rotation: e.rotation, damageFlashTimer: e.damageFlashTimer,
                 charging: e.charging || 0, type: e.type,
-                size: e.size, hp: e.hp,
+                size: e.size, hp: e.hp, elite: e.elite || false,
                 vx: e.vx, vy: e.vy,
                 dirChangeTimer: e.dirChangeTimer,
                 behavior: e.behavior,
